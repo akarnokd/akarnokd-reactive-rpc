@@ -193,6 +193,7 @@ public enum RsRpcProtocol {
                 } else {
                     onReceive.onNew(streamId, "");
                 }
+                break;
             }
             case TYPE_CANCEL: {
                 if (len > 16) {
@@ -201,16 +202,18 @@ public enum RsRpcProtocol {
                 } else {
                     onReceive.onCancel(streamId, "");
                 }
+                break;
             }
             
             case TYPE_NEXT: {
                 if (len > 16) {
                     byte[] payload = new byte[len - 16];
-                    int r = in.read(payload);
+                    int r = readFully(in, payload);
                     onReceive.onNext(streamId, payload, r);
                 } else {
                     onReceive.onNext(streamId, EMPTY, 0);
                 }
+                break;
             }
             case TYPE_ERROR: {
                 if (len > 16) {
@@ -219,6 +222,7 @@ public enum RsRpcProtocol {
                 } else {
                     onReceive.onError(streamId, "");
                 }
+                break;
             }
             
             case TYPE_COMPLETE: {
@@ -227,8 +231,10 @@ public enum RsRpcProtocol {
                     if (in.read() < 0) {
                         break;
                     }
+                    len--;
                 }
                 onReceive.onComplete(streamId);
+                break;
             }
             
             case TYPE_REQUEST: {
@@ -255,12 +261,13 @@ public enum RsRpcProtocol {
                 } else {
                     onReceive.onRequested(streamId, flags);
                 }
+                break;
             }
             
             default: {
                 if (len > 16) {
                     byte[] payload = new byte[len - 16];
-                    int r = in.read(payload);
+                    int r = readFully(in,payload);
                     onReceive.onUnknown(type, flags, streamId, payload, r);
                 } else {
                     onReceive.onUnknown(type, flags, streamId, EMPTY, 0);
@@ -271,6 +278,25 @@ public enum RsRpcProtocol {
         } catch (IOException ex) {
             onReceive.onError(-1, "I/O error while reading data: " + ex);
         }
+    }
+    
+    static int readFully(InputStream in, byte[] output) throws IOException {
+        int offset = 0;
+        int remaining = output.length;
+        
+        for (;;) {
+            int a = in.read(output, offset, remaining);
+            if (a < 0) {
+                break;
+            }
+            offset += a;
+            remaining -= a;
+            if (remaining == 0) {
+                break;
+            }
+        }
+        
+        return offset;
     }
     
     static String readString(InputStream in, int payloadLength) throws IOException {

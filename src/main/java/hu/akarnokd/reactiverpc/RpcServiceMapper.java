@@ -317,31 +317,17 @@ public enum RpcServiceMapper {
                 
                 final AtomicInteger open = new AtomicInteger(2);
                 
-                Subscriber<Object> parent = new RpcMapSubscriber(streamId, open, io);
+                RpcMapReceiverSubscriber receiver = new RpcMapReceiverSubscriber(s, streamId, open, io);
+
+                RpcMapSubscriber sender = new RpcMapSubscriber(streamId, open, io);
+                receiver.sender = sender;
                 
-                io.registerSubscriber(streamId, parent);
+                io.registerSubscriber(streamId, receiver);
                 io.sendNew(streamId, function);
                 
-                s.onSubscribe(new Subscription() {
-
-                    @Override
-                    public void request(long n) {
-                        if (SubscriptionHelper.validate(n)) {
-                            io.sendRequested(streamId, n);
-                        }
-                    }
-
-                    @Override
-                    public void cancel() {
-                        if (open.decrementAndGet() != 0) {
-                            io.deregister(streamId);
-                        }
-                        io.sendCancel(streamId, "");
-                    }
-                    
-                });
+                s.onSubscribe(receiver.s);
                 
-                values.subscribe(parent);
+                values.subscribe(sender);
             };
         }
         
@@ -402,6 +388,88 @@ public enum RpcServiceMapper {
                     io.deregister(streamId);
                 }
                 io.sendComplete(streamId);
+            }
+        }
+        
+        static final class RpcMapReceiverSubscriber implements Subscriber<Object>, Subscription {
+            final Subscriber<Object> actual;
+            
+            final long streamId;
+            
+            final AtomicInteger open;
+            
+            final RpcIOManager io;
+
+            Subscription s;
+
+            RpcMapSubscriber sender;
+            
+            public RpcMapReceiverSubscriber(Subscriber<Object> actual, long streamId, AtomicInteger open, RpcIOManager io) {
+                this.actual = actual;
+                this.streamId = streamId;
+                this.open = open;
+                this.io = io;
+                this.s = new Subscription() {
+                    @Override
+                    public void request(long n) {
+                        innerRequest(n);
+                    }
+                    
+                    @Override
+                    public void cancel() {
+                        innerCancel();
+                    }
+                };
+            }
+
+            void innerRequest(long n) {
+                if (SubscriptionHelper.validate(n)) {
+                    io.sendRequested(streamId, n);
+                }
+            }
+            
+            void innerCancel() {
+                if (open.decrementAndGet() != 0) {
+                    io.deregister(streamId);
+                }
+                io.sendCancel(streamId, "");
+            }
+            
+
+            @Override
+            public void onSubscribe(Subscription s) {
+                // IO manager won't call this
+            }
+
+            @Override
+            public void onNext(Object t) {
+                actual.onNext(t);
+            }
+
+            @Override
+            public void onError(Throwable t) {
+                if (open.decrementAndGet() != 0) {
+                    io.deregister(streamId);
+                }
+                actual.onError(t);
+            }
+
+            @Override
+            public void onComplete() {
+                if (open.decrementAndGet() != 0) {
+                    io.deregister(streamId);
+                }
+                actual.onComplete();
+            }
+            
+            @Override
+            public void request(long n) {
+                sender.request(n);
+            }
+
+            @Override
+            public void cancel() {
+                sender.cancel();
             }
         }
     }

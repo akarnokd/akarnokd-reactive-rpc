@@ -1,15 +1,21 @@
 package hu.akarnokd.reactiverpc;
 
-import java.net.InetAddress;
+import java.io.IOException;
+import java.net.*;
 import java.util.Objects;
 
+import rsc.flow.Cancellation;
 import rsc.scheduler.*;
+import rsc.util.UnsignalledExceptions;
 
 public final class RpcServer<T> {
     
-    static final Scheduler ACCEPTOR = new ParallelScheduler(1, "akarnokd-reactive-rpc-connection", true);
-    
+    final Object localAPI;
+    final Class<T> remoteAPI;
+
     private RpcServer(Object localAPI, Class<T> remoteAPI) {
+        this.localAPI = localAPI;
+        this.remoteAPI = remoteAPI;
         
     }
     
@@ -30,19 +36,43 @@ public final class RpcServer<T> {
     }
     
     public AutoCloseable start(int port) {
-        return null;
+        ServerSocket ssocket;
+        try {
+            ssocket = new ServerSocket(port);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        
+        Scheduler acceptor = new ParallelScheduler(1, "akarnokd-reactive-rpc-connection", true);
+        
+        Cancellation c = acceptor.schedule(() -> {
+            socketAccept(ssocket);
+        });
+        
+        return () -> {
+            c.dispose();
+            ssocket.close();
+        };
+    }
+    
+    void socketAccept(ServerSocket ssocket) {
+        while (!Thread.currentThread().isInterrupted()) {
+            Socket socket;
+            
+            try {
+                socket = ssocket.accept();
+                
+            } catch (IOException e) {
+                UnsignalledExceptions.onErrorDropped(e);
+                return;
+            }
+            
+            RpcSocketManager.connect(socket, socket.getInetAddress(), socket.getPort(), 
+                    remoteAPI, localAPI, c -> { });
+        }
     }
     
     public AutoCloseable start(InetAddress localAddress, int port) {
         return null;
     }
-
-    public AutoCloseable start(int port, Scheduler dispatcher) {
-        return null;
-    }
-    
-    public AutoCloseable start(InetAddress localAddress, int port, Scheduler dispatcher) {
-        return null;
-    }
-
 }
