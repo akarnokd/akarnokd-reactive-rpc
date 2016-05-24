@@ -3,6 +3,7 @@ package hu.akarnokd.reactiverpc;
 import java.io.IOException;
 import java.net.*;
 import java.util.Objects;
+import java.util.concurrent.Executors;
 
 import rsc.flow.Cancellation;
 import rsc.scheduler.*;
@@ -13,6 +14,13 @@ public final class RpcServer<T> {
     final Object localAPI;
     final Class<T> remoteAPI;
 
+    static Scheduler scheduler = new ExecutorServiceScheduler(Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "akarnokd-reactive-rpc-clientpool");
+        t.setDaemon(true);
+        return t;
+    }));
+
+    
     private RpcServer(Object localAPI, Class<T> remoteAPI) {
         this.localAPI = localAPI;
         this.remoteAPI = remoteAPI;
@@ -21,17 +29,21 @@ public final class RpcServer<T> {
     
     public static RpcServer<Void> createLocal(Object localAPI) {
         Objects.requireNonNull(localAPI, "localAPI");
+        RpcServiceMapper.serverServiceMap(localAPI);
         return new RpcServer<>(localAPI, null);
     }
     
     public static <T> RpcServer<T> createRemote(Class<T> remoteAPI) {
         Objects.requireNonNull(remoteAPI, "remoteAPI");
+        RpcServiceMapper.clientServiceMap(remoteAPI);
         return new RpcServer<>(null, remoteAPI);
     }
     
     public static <T> RpcServer<T> createBidirectional(Object localAPI, Class<T> remoteAPI) {
         Objects.requireNonNull(localAPI, "localAPI");
+        RpcServiceMapper.serverServiceMap(localAPI);
         Objects.requireNonNull(remoteAPI, "remoteAPI");
+        RpcServiceMapper.clientServiceMap(remoteAPI);
         return new RpcServer<>(localAPI, remoteAPI);
     }
     
@@ -67,8 +79,17 @@ public final class RpcServer<T> {
                 return;
             }
             
-            RpcSocketManager.connect(socket, socket.getInetAddress(), socket.getPort(), 
-                    remoteAPI, localAPI, c -> { });
+            try {
+                RpcSocketManager.connect(socket, socket.getInetAddress(), socket.getPort(), 
+                        remoteAPI, localAPI, c -> { }, scheduler, true);
+            } catch (Throwable ex) {
+                UnsignalledExceptions.onErrorDropped(ex);
+                try {
+                    socket.close();
+                } catch (IOException e) {
+                    UnsignalledExceptions.onErrorDropped(e);
+                }
+            }
         }
     }
     

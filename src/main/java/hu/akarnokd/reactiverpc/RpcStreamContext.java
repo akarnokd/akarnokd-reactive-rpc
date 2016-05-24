@@ -2,6 +2,8 @@ package hu.akarnokd.reactiverpc;
 
 import java.net.InetAddress;
 
+import rsc.scheduler.Scheduler;
+
 public interface RpcStreamContext<T> {
 
     InetAddress clientAddress();
@@ -19,4 +21,6 @@ public interface RpcStreamContext<T> {
     boolean has(String attribute);
     
     T remoteAPI();
+    
+    Scheduler scheduler();
 }

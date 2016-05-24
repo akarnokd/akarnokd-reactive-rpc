@@ -14,7 +14,9 @@ public enum RpcSocketManager {
     ;
     
     public static <T> T connect(Socket socket, InetAddress endpoint, int port, 
-            Class<T> remoteAPI, Object localAPI, Consumer<Cancellation> close) {
+            Class<T> remoteAPI, Object localAPI, 
+            Consumer<Cancellation> close, Scheduler scheduler,
+            boolean server) {
         ;
         InputStream in;
         OutputStream out;
@@ -26,7 +28,7 @@ public enum RpcSocketManager {
             throw new RuntimeException(e);
         }
         
-        Scheduler dispatcher = new ParallelScheduler(2, "akarnokd-reactive-rpc-io", true);
+        Scheduler dispatcher = new ParallelScheduler(2, "akarnokd-reactive-rpc-" + (server ? "server" : "client") + "-io", true);
         Scheduler.Worker reader = dispatcher.createWorker();
         Scheduler.Worker writer = dispatcher.createWorker();
         
@@ -58,7 +60,7 @@ public enum RpcSocketManager {
                     String name = m.getName();
                     RsRpc a = m.getAnnotation(RsRpc.class);
                     if (a == null) {
-                        throw new IllegalArgumentException("The method '" + m.getName() + "' is not a proper RsRpc method");
+                        throw new IllegalArgumentException("The method '" + m.getName() + "' is not annotated with RsRpc");
                     }
                     String aname = a.name();
                     if (!aname.isEmpty()) {
@@ -76,7 +78,7 @@ public enum RpcSocketManager {
             api = null;
         }
 
-        ctx = new RpcStreamContextImpl<>(endpoint, port, api);
+        ctx = new RpcStreamContextImpl<>(endpoint, port, api, scheduler);
 
         if (localAPI != null) {
             serverMap = RpcServiceMapper.serverServiceMap(localAPI);
@@ -84,11 +86,11 @@ public enum RpcSocketManager {
             io[0] = new RpcIOManager(reader, in, writer, out, (streamId, function, iom) -> {
                 Object action = serverMap.get(function);
                 return RpcServiceMapper.dispatchServer(streamId, action, iom, ctx);
-            }, false);
+            }, server);
             
             RpcServiceMapper.invokeInit(localAPI, ctx);
         } else {
-            io[0] = new RpcIOManager(reader, in, writer, out, (streamId, function, iom) -> false, false);
+            io[0] = new RpcIOManager(reader, in, writer, out, (streamId, function, iom) -> false, server);
         }
         
         io[0].start();

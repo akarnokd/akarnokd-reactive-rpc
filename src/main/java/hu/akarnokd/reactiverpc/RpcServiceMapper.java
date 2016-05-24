@@ -87,6 +87,13 @@ public enum RpcServiceMapper {
                         } else {
                             throw new IllegalStateException("RsRpc annotated methods require a first RpcStreamContext as a parameter: " + m);
                         }
+                    } else 
+                    if (pc > 2) {
+                        if (RpcStreamContext.class.isAssignableFrom(m.getParameterTypes()[0])) {
+                            result.put(name, new RpcServerSyncReceive(m, api));
+                        } else {
+                            throw new IllegalStateException("RsRpc annotated methods require a first RpcStreamContext as a parameter: " + m);
+                        }
                     } else {
                         throw new IllegalStateException("RsRpc annotated methods require one RpcStreamContext and one Publisher as a parameter: " + m);
                     }
@@ -114,7 +121,16 @@ public enum RpcServiceMapper {
                         throw new IllegalStateException("RsRpc annotated methods require one RpcStreamContext and one Publisher as a parameter: " + m);
                     }
                 } else {
-                    throw new IllegalStateException("Unsupported RsRpc annotated return type: " + m);
+                    int pc = m.getParameterCount();
+                    if (pc > 0 && RpcStreamContext.class.isAssignableFrom(m.getParameterTypes()[0])) {
+                        if (pc == 1) {
+                            result.put(name, new RpcServerSyncSend(m, api));
+                        } else {
+                            result.put(name, new RpcServerSyncMap(m, api));
+                        }
+                    } else {
+                        throw new IllegalStateException("RsRpc annotated methods require at one RpcStreamContext as a parameter: " + m);
+                    }
                 }
             }
         }
@@ -198,6 +214,18 @@ public enum RpcServiceMapper {
         if (action instanceof RpcServerMap) {
             RpcServerMap rpcServerMap = (RpcServerMap) action;
             return rpcServerMap.map(streamId, ctx, io);
+        } else
+        if (action instanceof RpcServerSyncSend) {
+            RpcServerSyncSend rpcServerSyncSend = (RpcServerSyncSend) action;
+            return rpcServerSyncSend.send(streamId, ctx, io);
+        } else
+        if (action instanceof RpcServerSyncReceive) {
+            RpcServerSyncReceive rpcServerSyncReceive = (RpcServerSyncReceive) action;
+            return rpcServerSyncReceive.receive(streamId, ctx, io);
+        } else
+        if (action instanceof RpcServerSyncMap) {
+            RpcServerSyncMap rpcServerSyncMap = (RpcServerSyncMap) action;
+            return rpcServerSyncMap.map(streamId, ctx, io);
         }
         return false;
     }
@@ -743,6 +771,29 @@ public enum RpcServiceMapper {
         }
     }
     
+    static final class RpcServerSyncSend {
+        final Method m;
+        
+        final Object instance;
+        
+        public RpcServerSyncSend(Method m, Object instance) {
+            this.m = m;
+            this.instance = instance;
+        }
+        
+        public boolean send(long streamId, RpcStreamContext<?> ctx, RpcIOManager io) {
+            RpcServerSend.ServerSendSubscriber parent = new RpcServerSend.ServerSendSubscriber(streamId, io);
+            io.registerSubscriber(streamId, parent);
+            
+            Px.fromCallable(() -> {
+                return m.invoke(instance);
+            })
+            .subscribe(parent);
+            
+            return true;
+        }
+    }
+    
     static final class RpcServerSend {
         final Method m;
         
@@ -831,6 +882,61 @@ public enum RpcServiceMapper {
         }
     }
     
+    static final class RpcServerSyncReceive {
+        final Method m;
+        
+        final Object instance;
+        
+        public RpcServerSyncReceive(Method m, Object instance) {
+            this.m = m;
+            this.instance = instance;
+        }
+        
+        public boolean receive(long streamId, RpcStreamContext<?> ctx, RpcIOManager io) {
+            RpcServerReceive.ServerReceiveSubscriber parent = new RpcServerReceive.ServerReceiveSubscriber(streamId, io);
+            
+            Publisher<?> p = s -> {
+                    parent.actual = s;
+                    io.registerSubscriber(streamId, parent);
+                    s.onSubscribe(parent);
+            };
+            Px.wrap(p).observeOn(ctx.scheduler()).map(o -> {
+                syncInvoke(m, instance, ctx, o);
+                return 0;
+            }).subscribe();
+            return true;
+        }
+    }
+    
+    static Object syncInvoke(Method m, Object instance, RpcStreamContext<?> ctx, Object o) {
+        int c = m.getParameterCount();
+
+        if (!(o instanceof Object[])) {
+            if (c == 2 && m.getParameterTypes()[1].isAssignableFrom(o.getClass())) {
+                try {
+                    return m.invoke(instance, ctx, o);
+                } catch (Throwable e) {
+                    throw new RuntimeException(e);
+                }
+            }
+            throw new IllegalArgumentException(m.getName() + ": input is not an array of objects but " + o.getClass());
+        }
+        Object[] a = (Object[])o;
+        if (a.length != c - 1) {
+            throw new IllegalArgumentException(m.getName() + ": Input array size mismatch: " + a.length + " instead of " + (c - 1));
+        }
+        
+        Object[] b = new Object[c];
+        b[0] = ctx;
+        System.arraycopy(a, 0, b, 1, c - 1);
+        
+        try {
+            return m.invoke(instance, b);
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
+    }
+    
     static final class RpcServerReceive {
         final Method m;
         
@@ -912,6 +1018,45 @@ public enum RpcServiceMapper {
                 io.deregister(streamId);
                 io.sendCancel(streamId, "");
             }
+        }
+    }
+
+    static final class RpcServerSyncMap {
+        final Method m;
+        
+        final Object instance;
+        
+        public RpcServerSyncMap(Method m, Object instance) {
+            this.m = m;
+            this.instance = instance;
+        }
+        
+        public boolean map(long streamId, RpcStreamContext<?> ctx, RpcIOManager io) {
+            AtomicInteger innerOnce = new AtomicInteger(2);
+
+            RpcServerMap.ServerMapSubscriber parent = new RpcServerMap.ServerMapSubscriber(streamId, io, innerOnce);
+            RpcServerMap.ServerSendSubscriber sender = new RpcServerMap.ServerSendSubscriber(streamId, io, innerOnce);
+            parent.sender = sender;
+
+            io.registerSubscriber(streamId, parent);
+
+            AtomicBoolean once = new AtomicBoolean();
+            
+            Publisher<?> p = s -> {
+                if (once.compareAndSet(false, true)) {
+                    parent.actual = s;
+                    s.onSubscribe(parent.s);
+                } else {
+                    EmptySubscription.error(s, new IllegalStateException("This Publisher allows only a single subscriber"));
+                }
+            };
+            
+            Publisher<?> u = Px.wrap(p).observeOn(ctx.scheduler())
+                    .map(o -> syncInvoke(m, instance, ctx, o));
+            
+            u.subscribe(sender);
+            
+            return true;
         }
     }
     

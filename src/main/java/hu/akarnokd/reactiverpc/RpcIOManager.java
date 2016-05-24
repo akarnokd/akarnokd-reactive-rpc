@@ -110,14 +110,17 @@ public class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
                     ObjectInputStream oin = new ObjectInputStream(bin);
                     o = oin.readObject();
                 } catch (IOException | ClassNotFoundException ex) {
-                    writer.schedule(() -> {
-                        RsRpcProtocol.cancel(out, streamId, ex.toString());
-                    });
+                    sendCancel(streamId, ex.toString());
                     s.onError(ex);
                     return;
                 }
                 
-                s.onNext(o);
+                try {
+                    s.onNext(o);
+                } catch (Throwable ex) {
+                    sendCancel(streamId, ex.toString());
+                    s.onError(ex);
+                }
             }
         }
     }

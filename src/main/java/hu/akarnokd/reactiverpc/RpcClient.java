@@ -3,15 +3,23 @@ package hu.akarnokd.reactiverpc;
 import java.io.IOException;
 import java.net.*;
 import java.util.Objects;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
 import rsc.flow.Cancellation;
+import rsc.scheduler.*;
 
 public final class RpcClient<T> {
 
     final Class<T> remoteAPI;
     
     final Object localAPI;
+    
+    static Scheduler scheduler = new ExecutorServiceScheduler(Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "akarnokd-reactive-rpc-clientpool");
+        t.setDaemon(true);
+        return t;
+    }));
     
     private RpcClient(Class<T> remoteAPI, Object localAPI) {
         this.remoteAPI = remoteAPI;
@@ -42,6 +50,6 @@ public final class RpcClient<T> {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-        return RpcSocketManager.connect(socket, endpoint, port, remoteAPI, localAPI, close);
+        return RpcSocketManager.connect(socket, endpoint, port, remoteAPI, localAPI, close, scheduler, false);
     }
 }

@@ -3,6 +3,8 @@ package hu.akarnokd.reactiverpc;
 import java.net.InetAddress;
 import java.util.concurrent.*;
 
+import rsc.scheduler.Scheduler;
+
 public final class RpcStreamContextImpl<T> implements RpcStreamContext<T> {
     
     final InetAddress address;
@@ -13,10 +15,13 @@ public final class RpcStreamContextImpl<T> implements RpcStreamContext<T> {
     
     final T remoteAPI;
     
-    public RpcStreamContextImpl(InetAddress address, int port, T remoteAPI) {
+    final Scheduler scheduler;
+    
+    public RpcStreamContextImpl(InetAddress address, int port, T remoteAPI, Scheduler scheduler) {
         this.address = address;
         this.port = port;
         this.remoteAPI = remoteAPI;
+        this.scheduler = scheduler;
         this.map = new ConcurrentHashMap<>();
     }
 
@@ -60,5 +65,10 @@ public final class RpcStreamContextImpl<T> implements RpcStreamContext<T> {
     @Override
     public T remoteAPI() {
         return remoteAPI;
+    }
+    
+    @Override
+    public Scheduler scheduler() {
+        return scheduler;
     }
 }
