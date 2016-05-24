@@ -8,6 +8,8 @@ import java.util.function.Function;
 
 import org.reactivestreams.*;
 
+import rsc.publisher.Px;
+import rsc.subscriber.BlockingLastSubscriber;
 import rsc.util.*;
 
 public enum RpcServiceMapper {
@@ -27,6 +29,29 @@ public enum RpcServiceMapper {
                             throw new IllegalStateException(e);
                         }
                         
+                        return;
+                    }
+                }
+                throw new IllegalStateException("RsRpcInit method has to be void and accepting only a single RpcStreamContext parameter");
+            }
+        }
+    }
+    
+    public static void invokeDone(Object api, RpcStreamContext<?> ctx) {
+        for (Method m : api.getClass().getMethods()) {
+            if (m.isAnnotationPresent(RsRpcDone.class)) {
+                if (m.getReturnType() == Void.TYPE) {
+                    if (m.getParameterCount() == 1 &&
+                            RpcStreamContext.class.isAssignableFrom(m.getParameterTypes()[0])) {
+                        
+                        try {
+                            m.invoke(api, ctx);
+                        } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
+                            UnsignalledExceptions.onErrorDropped(e);
+                            throw new IllegalStateException(e);
+                        }
+                        
+                        return;
                     }
                 }
                 throw new IllegalStateException("RsRpcInit method has to be void and accepting only a single RpcStreamContext parameter");
@@ -111,21 +136,28 @@ public enum RpcServiceMapper {
                     name = aname;
                 }
                 
+                if (result.containsKey(name)) {
+                    throw new IllegalStateException("Overloads with the same target name are not supported");
+                }
+                
                 Class<?> rt = m.getReturnType();
                 
                 if (rt == Void.TYPE) {
                     int pc = m.getParameterCount();
-                    if (pc != 1) {
-                        throw new IllegalStateException("RsRpc annotated methods require exactly one parameter: " + m);
-                    }
-                    if (Function.class.isAssignableFrom(m.getParameterTypes()[0])) {
-                        result.put(name, new RpcClientUmap());
+                    if (pc == 0) {
+                        throw new IllegalStateException("RsRpc annotated void methods require at least one parameter");
                     } else
-                    if (Publisher.class.isAssignableFrom(m.getParameterTypes()[0])) {
-                        result.put(name, new RpcClientSend());
-                    } else {
-                        throw new IllegalStateException("RsRpc annotated methods require a Function or Publisher as a parameter: " + m);
+                    if (pc == 1) {
+                        if (Function.class.isAssignableFrom(m.getParameterTypes()[0])) {
+                            result.put(name, new RpcClientUmap());
+                            continue;
+                        } else
+                        if (Publisher.class.isAssignableFrom(m.getParameterTypes()[0])) {
+                            result.put(name, new RpcClientSend());
+                            continue;
+                        }
                     }
+                    result.put(name, new RpcClientSyncSend());
                 } else
                 if (Publisher.class.isAssignableFrom(rt)) {
                     int pc = m.getParameterCount();
@@ -142,7 +174,11 @@ public enum RpcServiceMapper {
                         }
                     }
                 } else {
-                    throw new IllegalStateException("Unsupported RsRpc annotated return type: " + m);
+                    if (m.getParameterCount() == 0) {
+                        result.put(name, new RpcClientSyncReceive());
+                    } else {
+                        result.put(name, new RpcClientSyncMap());
+                    }
                 }
             }
         }
@@ -195,13 +231,38 @@ public enum RpcServiceMapper {
             Function<Publisher<?>, Publisher<?>> f = (Function<Publisher<?>, Publisher<?>>)args[0];
             rpcUmap.umap(name, f, io);
             return null;
+        } else
+        if (action instanceof RpcClientSyncSend) {
+            RpcClientSyncSend rpcClientSyncSend = (RpcClientSyncSend) action;
+            rpcClientSyncSend.send(name, args, io);
+            return null;
+        } else
+        if (action instanceof RpcClientSyncReceive) {
+            RpcClientSyncReceive rpcClientSyncReceive = (RpcClientSyncReceive) action;
+            return rpcClientSyncReceive.receive(name, io);
+        } else
+        if (action instanceof RpcClientSyncMap) {
+            RpcClientSyncMap rpcClientSyncMap = (RpcClientSyncMap) action;
+            return rpcClientSyncMap.map(name, args, io);
         }
+        
         throw new IllegalStateException("Unsupported action class: " + action.getClass());
     }
     
-    static final class RpcClientSend {
+    static final class RpcClientSyncSend {
         
-        public void send(String function, Publisher<?> values, RpcIOManager io) {
+        public void send(String function, Object[] args, RpcIOManager io) {
+            if (args.length == 1) {
+                RpcClientSend.sendStatic(function, Px.just(args[0]), io);
+            } else {
+                RpcClientSend.sendStatic(function, Px.just(args), io);
+            }
+        }
+    }
+    
+    static final class RpcClientSend {
+
+        public static void sendStatic(String function, Publisher<?> values, RpcIOManager io) {
             long streamId = io.newStreamId();
             
             SendSubscriber s = new SendSubscriber(io, streamId);
@@ -210,20 +271,20 @@ public enum RpcServiceMapper {
             
             values.subscribe(s);
         }
+
+        public void send(String function, Publisher<?> values, RpcIOManager io) {
+            sendStatic(function, values, io);
+        }
         
         static final class SendSubscriber 
         extends DeferredSubscription
-        implements Subscriber<Object>, Subscription {
+        implements Subscriber<Object> {
             
             final RpcIOManager io;
             
             final long streamId;
             
             boolean done;
-            
-            volatile Subscription s;
-            static final AtomicReferenceFieldUpdater<SendSubscriber, Subscription> S =
-                    AtomicReferenceFieldUpdater.newUpdater(SendSubscriber.class, Subscription.class, "s");
             
             public SendSubscriber(RpcIOManager io, long streamId) {
                 this.io = io;
@@ -271,6 +332,16 @@ public enum RpcServiceMapper {
         }
     }
     
+    static final class RpcClientSyncReceive {
+        public Object receive(String function, RpcIOManager io) {
+            Publisher<?> p = RpcClientReceive.receiveStatic(function, io);
+            
+            BlockingLastSubscriber<Object> subscriber = new BlockingLastSubscriber<>();
+            p.subscribe(subscriber);
+            return subscriber.blockingGet();
+        }
+    }
+    
     static final class RpcClientReceive {
         
         static final class RpcReceiveSubscription implements Subscription {
@@ -297,7 +368,7 @@ public enum RpcServiceMapper {
             }
         }
 
-        public Publisher<?> receive(String function, RpcIOManager io) {
+        public static Publisher<?> receiveStatic(String function, RpcIOManager io) {
             return s -> {
                 long streamId = io.newStreamId();
                 io.registerSubscriber(streamId, s);
@@ -307,11 +378,31 @@ public enum RpcServiceMapper {
             };
         }
         
+        public Publisher<?> receive(String function, RpcIOManager io) {
+            return receiveStatic(function, io);
+        }
+        
+    }
+    
+    static final class RpcClientSyncMap {
+        public Object map(String function, Object[] args, RpcIOManager io) {
+            Publisher<?> p; 
+            
+            if (args.length == 1) {
+                p = RpcClientMap.mapStatic(function, Px.just(args[0]), io);
+            } else {
+                p = RpcClientMap.mapStatic(function, Px.just(args), io);
+            }
+            
+            BlockingLastSubscriber<Object> subscriber = new BlockingLastSubscriber<>();
+            p.subscribe(subscriber);
+            return subscriber.blockingGet();
+        }
     }
     
     static final class RpcClientMap {
         
-        public Publisher<?> map(String function, Publisher<?> values, RpcIOManager io) {
+        public static Publisher<?> mapStatic(String function, Publisher<?> values, RpcIOManager io) {
             return s -> {
                 long streamId = io.newStreamId();
                 
@@ -329,6 +420,10 @@ public enum RpcServiceMapper {
                 
                 values.subscribe(sender);
             };
+        }
+        
+        public Publisher<?> map(String function, Publisher<?> values, RpcIOManager io) {
+            return mapStatic(function, values, io);
         }
         
         static final class RpcMapSubscriber extends DeferredSubscription implements Subscriber<Object> {

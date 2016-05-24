@@ -14,7 +14,8 @@ public class BasicPingPongTest {
 
     interface PingPongClientAPI {
         
-        Integer pong(Integer ping);
+        @RsRpc
+        Integer pong2(Integer ping);
         
         @RsRpc
         Publisher<Integer> pong(Publisher<Integer> ping);
@@ -34,7 +35,12 @@ public class BasicPingPongTest {
         public Integer pong(RpcStreamContext<Void> ctx, Integer input) {
             return input + 1;
         }
-        
+
+        @RsRpc
+        public Publisher<Integer> pong2(RpcStreamContext<Void> ctx, Publisher<Integer> ping) {
+            return Px.wrap(ping).map(v -> v + 1);
+        }
+
         @RsRpc
         public Publisher<Integer> pong(RpcStreamContext<Void> ctx, Publisher<Integer> ping) {
             return Px.wrap(ping).map(v -> v + 1);
@@ -49,7 +55,7 @@ public class BasicPingPongTest {
         
         @RsRpc
         public Publisher<Integer> receive(RpcStreamContext<Void> ctx) {
-            return Px.range(1, 10000);
+            return Px.range(1, 1000);
         }
         
         @RsRpc
@@ -80,6 +86,9 @@ public class BasicPingPongTest {
 
             System.out.println("Map:");
             print(api.pong(Px.just(1)));
+
+            System.out.println("Sync map:");
+            System.out.println(api.pong2(2));
             
             System.out.println("Send:");
             api.send(Px.just(20));
