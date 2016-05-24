@@ -13,6 +13,9 @@ import rsc.publisher.Px;
 public class BasicPingPongTest {
 
     interface PingPongClientAPI {
+        
+        Integer pong(Integer ping);
+        
         @RsRpc
         Publisher<Integer> pong(Publisher<Integer> ping);
         
@@ -28,6 +31,10 @@ public class BasicPingPongTest {
     
     static class PingPongServerAPI {
         
+        public Integer pong(RpcStreamContext<Void> ctx, Integer input) {
+            return input + 1;
+        }
+        
         @RsRpc
         public Publisher<Integer> pong(RpcStreamContext<Void> ctx, Publisher<Integer> ping) {
             return Px.wrap(ping).map(v -> v + 1);
@@ -42,7 +49,7 @@ public class BasicPingPongTest {
         
         @RsRpc
         public Publisher<Integer> receive(RpcStreamContext<Void> ctx) {
-            return Px.just(100);
+            return Px.range(1, 10000);
         }
         
         @RsRpc
@@ -80,12 +87,15 @@ public class BasicPingPongTest {
             Thread.sleep(200);
             
             System.out.println("Receive:");
-            print(api.receive());
+            long t = System.currentTimeMillis();
+            print(Px.wrap(api.receive()));
+            
+            System.out.println("t = " + (System.currentTimeMillis() - t));
             
             System.out.println("Umap:");
             api.umap(o -> Px.wrap(o).map(v -> -v));
             
-            Thread.sleep(1000);
+            Thread.sleep(5000);
             
             cancel.get().dispose();
         }
