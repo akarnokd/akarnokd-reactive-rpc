@@ -786,7 +786,7 @@ public enum RpcServiceMapper {
             io.registerSubscriber(streamId, parent);
             
             Px.fromCallable(() -> {
-                return m.invoke(instance);
+                return m.invoke(instance, ctx);
             })
             .subscribe(parent);
             

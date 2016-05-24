@@ -118,6 +118,17 @@ public class BasicPingPongTest {
             
             PingPongClientAPI api = client.connect(InetAddress.getLocalHost(), 12345, cancel::set);
 
+            api.send3(1, 2);
+            
+            Thread.sleep(1000);
+            
+            System.out.println(api.receive3());
+            
+            System.out.println(api.map3(1, 2));
+
+            System.out.println("-----------");
+            
+            
             System.out.println("Map:");
             print(api.pong(Px.just(1)));
 
@@ -147,16 +158,6 @@ public class BasicPingPongTest {
             api.umap(o -> Px.wrap(o).map(v -> -v));
             
             Thread.sleep(5000);
-            
-            System.out.println("-----------");
-            
-            api.send3(1, 2);
-            
-            Thread.sleep(1000);
-            
-            System.out.println(api.receive3());
-            
-            System.out.println(api.map3(1, 2));
             
             cancel.get().dispose();
         }

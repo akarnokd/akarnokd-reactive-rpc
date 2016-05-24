@@ -30,6 +30,8 @@ public class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
     
     final AtomicLong streamIds;
     
+    volatile boolean closed;
+    
     public RpcIOManager(Worker reader, InputStream in, 
             Worker writer, OutputStream out,
             OnNewStream onNew,
@@ -45,6 +47,26 @@ public class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
     
     public void start() {
         reader.schedule(this::handleRead);
+    }
+    
+    public void close() {
+        this.closed = true;
+        
+        try {
+            in.close();
+        } catch (IOException e) {
+            UnsignalledExceptions.onErrorDropped(e);
+        }
+        
+        try {
+            out.close();
+        } catch (IOException e) {
+            UnsignalledExceptions.onErrorDropped(e);
+        }
+        
+        reader.shutdown();
+        
+        writer.shutdown();
     }
     
     void handleRead() {
@@ -127,14 +149,18 @@ public class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
 
     @Override
     public void onError(long streamId, String reason) {
-        Object local = streams.get(streamId);
-        if (local instanceof Subscriber) {
-            Subscriber<?> s = (Subscriber<?>) local;
-            
-            s.onError(new Exception(reason));
+        if (streamId > 0) {
+            Object local = streams.get(streamId);
+            if (local instanceof Subscriber) {
+                Subscriber<?> s = (Subscriber<?>) local;
+                
+                s.onError(new Exception(reason));
+                return;
+            }
+        }
+        if (streamId < 0 && closed) {
             return;
         }
-        
         UnsignalledExceptions.onErrorDropped(new Exception(reason));
     }
 
@@ -199,6 +225,7 @@ public class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
 
     public void sendError(long streamId, Throwable e) {
         writer.schedule(() -> {
+            e.printStackTrace();
             RsRpcProtocol.error(out, streamId, e);
             flush(out);
         });

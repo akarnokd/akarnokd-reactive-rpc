@@ -32,19 +32,6 @@ public enum RpcSocketManager {
         Scheduler.Worker reader = dispatcher.createWorker();
         Scheduler.Worker writer = dispatcher.createWorker();
         
-        close.accept(() -> {
-            reader.shutdown();
-            writer.shutdown();
-            
-            try {
-                socket.close();
-            } catch (IOException ex) {
-                UnsignalledExceptions.onErrorDropped(ex);
-            }
-        });
-        
-        
-        
         Map<String, Object> clientMap;
         Map<String, Object> serverMap;
 
@@ -94,6 +81,16 @@ public enum RpcSocketManager {
         }
         
         io[0].start();
+        
+        close.accept(() -> {
+            io[0].close();
+            
+            try {
+                socket.close();
+            } catch (IOException ex) {
+                UnsignalledExceptions.onErrorDropped(ex);
+            }
+        });
         
         return api;
     }
