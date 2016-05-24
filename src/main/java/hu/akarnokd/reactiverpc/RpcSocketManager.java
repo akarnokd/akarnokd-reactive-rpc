@@ -58,7 +58,7 @@ public enum RpcSocketManager {
                     String name = m.getName();
                     RsRpc a = m.getAnnotation(RsRpc.class);
                     if (a == null) {
-                        throw new IllegalArgumentException("The method " + m.getName() + " is not a proper RsRpc method");
+                        throw new IllegalArgumentException("The method '" + m.getName() + "' is not a proper RsRpc method");
                     }
                     String aname = a.name();
                     if (!aname.isEmpty()) {
@@ -67,7 +67,7 @@ public enum RpcSocketManager {
                     
                     Object action = clientMap.get(name);
                     if (action == null) {
-                        throw new IllegalArgumentException("The method " + m.getName() + " is not a proper RsRpc method");
+                        throw new IllegalArgumentException("The method '" + m.getName() + "' is not a proper RsRpc method");
                     }
                     return RpcServiceMapper.dispatchClient(name, action, args, io[0]);
                 }
