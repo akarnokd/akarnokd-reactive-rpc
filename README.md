@@ -15,7 +15,7 @@ Alternatively, you can use the usual maven dependency management to get the file
 
 ```
 dependencies {
-    compile "com.github.akarnokd:akarnokd-reactive-rpc:0.1.0"
+    compile "com.github.akarnokd:akarnokd-reactive-rpc:0.1.1"
 }
 ```
 
@@ -23,7 +23,7 @@ dependencies {
 
 ```
 <dependencies>
-		<dependency org="com.github.akarnokd" name="akarnokd-reactive-rpc" rev="0.1.0" />
+		<dependency org="com.github.akarnokd" name="akarnokd-reactive-rpc" rev="0.1.1" />
 </dependencies>
 ```
 
