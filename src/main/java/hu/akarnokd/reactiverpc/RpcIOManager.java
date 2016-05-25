@@ -211,9 +211,12 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
             return RpcHelper.readUtf8(payload, 0, len);
         } else
         if (flags == PAYLOAD_BYTES) {
-            byte[] r = new byte[len];
-            System.arraycopy(payload, 0, r, 0, len);
-            return r;
+            if (payload == readBuffer) {
+                byte[] r = new byte[len];
+                System.arraycopy(payload, 0, r, 0, len);
+                return r;
+            }
+            return payload;
         }
         
         ByteArrayInputStream bin = new ByteArrayInputStream(payload);
