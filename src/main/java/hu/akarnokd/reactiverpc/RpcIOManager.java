@@ -142,7 +142,7 @@ public class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
     }
 
     @Override
-    public void onNext(long streamId, byte[] payload, int read) {
+    public void onNext(long streamId, byte[] payload, int count, int read) {
         if (logMessages) {
             System.out.printf("%s/onNext/%d/len=%d/%d%n", server ? "server" : "client", streamId, payload.length, read);
         }
@@ -151,7 +151,7 @@ public class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
             @SuppressWarnings("unchecked")
             Subscriber<Object> s = (Subscriber<Object>)local;
             
-            if (payload.length != read) {
+            if (count != read) {
                 s.onError(new IOException("Partial value received: expected = " + payload.length + ", actual = " + read));
             } else {
                 Object o;

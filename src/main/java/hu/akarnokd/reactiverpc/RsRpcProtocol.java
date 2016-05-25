@@ -50,9 +50,10 @@ public enum RsRpcProtocol {
          * Called when the stream contains an NEXT frame.
          * @param streamId the stream identifier
          * @param payload the payload bytes, its length is derived from the frame length
+         * @param count the number of relevant bytes in the payload
          * @param read the number of read bytes, allows deciding what to do for partial reads
          */
-        void onNext(long streamId, byte[] payload, int read);
+        void onNext(long streamId, byte[] payload, int count, int read);
         
         void onError(long streamId, String reason);
         
@@ -138,27 +139,38 @@ public enum RsRpcProtocol {
     
     static final byte[] EMPTY = new byte[0];
 
-    public static void receive(InputStream in, byte[] hb, RsRpcReceive onReceive) {
+    public static void receive(InputStream in, byte[] rb, RsRpcReceive onReceive) {
         try {
 
-            if (RpcHelper.readFully(in, hb, 16) < 16) {
+            if (RpcHelper.readFully(in, rb, 16) < 16) {
                 onReceive.onError(-1, "Channel/Connection closed");
                 return;
             }
             
-            int len = (hb[0] & 0xFF) | ((hb[1] & 0xFF) << 8) | ((hb[2] & 0xFF) << 16) | ((hb[3] & 0xFF) << 24);
+            int len = (rb[0] & 0xFF) | ((rb[1] & 0xFF) << 8) | ((rb[2] & 0xFF) << 16) | ((rb[3] & 0xFF) << 24);
             
-            byte type = hb[4];
+            byte type = rb[4];
             
-            int flags = ((hb[5] & 0xFF)) | ((hb[6] & 0xFF) << 8) | ((hb[7] & 0xFF) << 16);
+            int flags = ((rb[5] & 0xFF)) | ((rb[6] & 0xFF) << 8) | ((rb[7] & 0xFF) << 16);
             
-            long streamId = (hb[8] & 0xFFL) | ((hb[9] & 0xFFL) << 8) | ((hb[10] & 0xFFL) << 16) | ((hb[11] & 0xFFL) << 24)
-                    | ((hb[12] & 0xFFL) << 32) | ((hb[13] & 0xFFL) << 40) | ((hb[14] & 0xFFL) << 48) | ((hb[15] & 0xFFL) << 56);
+            long streamId = (rb[8] & 0xFFL) | ((rb[9] & 0xFFL) << 8) | ((rb[10] & 0xFFL) << 16) | ((rb[11] & 0xFFL) << 24)
+                    | ((rb[12] & 0xFFL) << 32) | ((rb[13] & 0xFFL) << 40) | ((rb[14] & 0xFFL) << 48) | ((rb[15] & 0xFFL) << 56);
             
             switch (type) {
             case TYPE_NEW: {
-                if (len > 16) {
-                    String function = RpcHelper.readUtf8(in, len - 16);
+                len -= 16;
+                if (len != 0) {
+                    String function;
+                    if (len <= rb.length) {
+                        int r = RpcHelper.readFully(in, rb, len);
+                        if (r < len) {
+                            onReceive.onError(streamId, "Channel/Connection closed (@ new)");
+                            return;
+                        }
+                        function = RpcHelper.readUtf8(rb, 0, len);
+                    } else {
+                        function = RpcHelper.readUtf8(in, len);
+                    }
                     onReceive.onNew(streamId, function);
                 } else {
                     onReceive.onNew(streamId, "");
@@ -176,12 +188,18 @@ public enum RsRpcProtocol {
             }
             
             case TYPE_NEXT: {
-                if (len > 16) {
-                    byte[] payload = new byte[len - 16];
-                    int r = RpcHelper.readFully(in, payload, len - 16);
-                    onReceive.onNext(streamId, payload, r);
+                len -= 16;
+                if (len != 0) {
+                    byte[] payload;
+                    if (len <= rb.length) {
+                        payload = rb;
+                    } else {
+                        payload = new byte[len];
+                    }
+                    int r = RpcHelper.readFully(in, payload, len);
+                    onReceive.onNext(streamId, payload, len, r);
                 } else {
-                    onReceive.onNext(streamId, EMPTY, 0);
+                    onReceive.onNext(streamId, EMPTY, 0, 0);
                 }
                 break;
             }
@@ -197,11 +215,13 @@ public enum RsRpcProtocol {
             
             case TYPE_COMPLETE: {
                 // ignore payload
-                while (len > 16) {
-                    if (in.read() < 0) {
+                len -= 16;
+                while (len != 0) {
+                    int r = in.read(rb, 0, Math.min(len, rb.length));
+                    if (r < 0) {
                         break;
                     }
-                    len--;
+                    len -= r;
                 }
                 onReceive.onComplete(streamId);
                 break;
@@ -209,13 +229,13 @@ public enum RsRpcProtocol {
             
             case TYPE_REQUEST: {
                 if (len > 16) {
-                    if (RpcHelper.readFully(in, hb, 8) < 8) {
+                    if (RpcHelper.readFully(in, rb, 8) < 8) {
                         onReceive.onError(streamId, "Channel/Connection closed (@ request)");
                         return;
                     }
                     
-                    long requested = (hb[0] & 0xFFL) | ((hb[1] & 0xFFL) << 8) | ((hb[2] & 0xFFL) << 16) | ((hb[3] & 0xFFL) << 24)
-                            | ((hb[4] & 0xFFL) << 32) | ((hb[5] & 0xFFL) << 40) | ((hb[6] & 0xFFL) << 48) | ((hb[7] & 0xFFL) << 56);
+                    long requested = (rb[0] & 0xFFL) | ((rb[1] & 0xFFL) << 8) | ((rb[2] & 0xFFL) << 16) | ((rb[3] & 0xFFL) << 24)
+                            | ((rb[4] & 0xFFL) << 32) | ((rb[5] & 0xFFL) << 40) | ((rb[6] & 0xFFL) << 48) | ((rb[7] & 0xFFL) << 56);
                     
                     onReceive.onRequested(streamId, requested);
                 } else {

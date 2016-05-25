@@ -199,18 +199,19 @@ public class BasicPingPongTest {
             
                 System.out.printf("%6d | %n", i);
                 
-                long t = System.nanoTime();
-                
-                long count = Px.wrap(api.range(Px.just(i)))
-                .observeOn(ImmediateScheduler.instance())
-                .count()
-                .blockingLast();
-                
-                System.out.printf("%6d", count);
-                
-                t = System.nanoTime() - t;
-                
-                System.out.printf("          %.3f ms/op%n", (t / 1024d / 1024d));
+                for (int j = 0; j < 10; j++) {
+                    long t = System.nanoTime();
+                    
+                    long count = Px.wrap(api.range(Px.just(i)))
+                    .observeOn(ImmediateScheduler.instance())
+                    .count()
+                    .blockingLast();
+
+                    t = System.nanoTime() - t;
+                    
+                    System.out.printf("-> %6d", count);
+                    System.out.printf("          %.3f ms/op%n", (t / 1024d / 1024d));
+                }
             }
             
             cancel.get().dispose();
