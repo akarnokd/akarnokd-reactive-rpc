@@ -88,8 +88,10 @@ public class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
     }
     
     void handleRead() {
-        while (!Thread.currentThread().isInterrupted()) {
-            RsRpcProtocol.receive(in, readBuffer, this);
+        while (!Thread.currentThread().isInterrupted() && !closed) {
+            if (!RsRpcProtocol.receive(in, readBuffer, this)) {
+                break;
+            }
         }
     }
     

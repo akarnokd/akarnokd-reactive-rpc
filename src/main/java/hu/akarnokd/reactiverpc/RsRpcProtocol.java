@@ -139,12 +139,12 @@ public enum RsRpcProtocol {
     
     static final byte[] EMPTY = new byte[0];
 
-    public static void receive(InputStream in, byte[] rb, RsRpcReceive onReceive) {
+    public static boolean receive(InputStream in, byte[] rb, RsRpcReceive onReceive) {
         try {
 
             if (RpcHelper.readFully(in, rb, 16) < 16) {
                 onReceive.onError(-1, "Channel/Connection closed");
-                return;
+                return false;
             }
             
             int len = (rb[0] & 0xFF) | ((rb[1] & 0xFF) << 8) | ((rb[2] & 0xFF) << 16) | ((rb[3] & 0xFF) << 24);
@@ -165,7 +165,7 @@ public enum RsRpcProtocol {
                         int r = RpcHelper.readFully(in, rb, len);
                         if (r < len) {
                             onReceive.onError(streamId, "Channel/Connection closed (@ new)");
-                            return;
+                            return false;
                         }
                         function = RpcHelper.readUtf8(rb, 0, len);
                     } else {
@@ -231,7 +231,7 @@ public enum RsRpcProtocol {
                 if (len > 16) {
                     if (RpcHelper.readFully(in, rb, 8) < 8) {
                         onReceive.onError(streamId, "Channel/Connection closed (@ request)");
-                        return;
+                        return false;
                     }
                     
                     long requested = (rb[0] & 0xFFL) | ((rb[1] & 0xFFL) << 8) | ((rb[2] & 0xFFL) << 16) | ((rb[3] & 0xFFL) << 24)
@@ -255,8 +255,10 @@ public enum RsRpcProtocol {
             }
             }
             
+            return true;
         } catch (IOException ex) {
             onReceive.onError(-1, "I/O error while reading data: " + ex);
+            return false;
         }
     }
     
