@@ -2,7 +2,7 @@ package hu.akarnokd.reactiverpc;
 
 import java.io.*;
 
-public enum RpcHelper {
+enum RpcHelper {
     
     ;
     

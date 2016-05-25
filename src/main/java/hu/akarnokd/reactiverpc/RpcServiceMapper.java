@@ -12,7 +12,7 @@ import rsc.publisher.Px;
 import rsc.subscriber.BlockingLastSubscriber;
 import rsc.util.*;
 
-public enum RpcServiceMapper {
+enum RpcServiceMapper {
     ;
     
     public static void invokeInit(Object api, RpcStreamContext<?> ctx) {

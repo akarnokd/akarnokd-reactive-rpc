@@ -10,7 +10,7 @@ import rsc.flow.Cancellation;
 import rsc.scheduler.*;
 import rsc.util.UnsignalledExceptions;
 
-public enum RpcSocketManager {
+enum RpcSocketManager {
     ;
     
     public static <T> T connect(Socket socket, InetAddress endpoint, int port, 

@@ -9,7 +9,7 @@ import org.reactivestreams.*;
 import rsc.scheduler.Scheduler.Worker;
 import rsc.util.UnsignalledExceptions;
 
-public class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
+final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
     
     static volatile boolean logMessages = false;
     

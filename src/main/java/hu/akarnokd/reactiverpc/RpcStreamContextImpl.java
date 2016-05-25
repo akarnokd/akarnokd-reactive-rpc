@@ -5,7 +5,7 @@ import java.util.concurrent.*;
 
 import rsc.scheduler.Scheduler;
 
-public final class RpcStreamContextImpl<T> implements RpcStreamContext<T> {
+final class RpcStreamContextImpl<T> implements RpcStreamContext<T> {
     
     final InetAddress address;
     

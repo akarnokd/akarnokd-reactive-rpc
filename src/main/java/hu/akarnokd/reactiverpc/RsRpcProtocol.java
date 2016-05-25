@@ -12,7 +12,7 @@ import java.nio.charset.StandardCharsets;
  * 05-07: entry flags (3 bytes little endian)
  * 08-0F: stream identifier (8 bytes little endian); bit 63: set for server opened streams
  */
-public enum RsRpcProtocol {
+enum RsRpcProtocol {
     ;
     /**
      * Starts a new stream numbered by the sender, the payload
