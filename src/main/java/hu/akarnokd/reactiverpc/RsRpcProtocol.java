@@ -63,29 +63,31 @@ public enum RsRpcProtocol {
         void onUnknown(int type, int flags, long streamId, byte[] payload, int read);
     }
 
-    static void send(OutputStream out, long streamId, int type, int flags, byte[] payload) {
+    static void send(OutputStream out, long streamId, int type, int flags, byte[] payload, byte[] wb) {
         try {
             int len = 16 + (payload != null ? payload.length : 0);
             
-            out.write((len >> 0) & 0xFF);
-            out.write((len >> 8) & 0xFF);
-            out.write((len >> 16) & 0xFF);
-            out.write((len >> 24) & 0xFF);
+            wb[0] = (byte)((len >> 0) & 0xFF);
+            wb[1] = (byte)((len >> 8) & 0xFF);
+            wb[2] = (byte)((len >> 16) & 0xFF);
+            wb[3] = (byte)((len >> 24) & 0xFF);
             
-            out.write(type & 0xFF);
+            wb[4] = (byte)(type & 0xFF);
             
-            out.write((flags >> 0) & 0xFF);
-            out.write((flags >> 8) & 0xFF);
-            out.write((flags >> 16) & 0xFF);
+            wb[5] = (byte)((flags >> 0) & 0xFF);
+            wb[6] = (byte)((flags >> 8) & 0xFF);
+            wb[7] = (byte)((flags >> 16) & 0xFF);
 
-            out.write((int)(streamId >> 0) & 0xFF);
-            out.write((int)(streamId >> 8) & 0xFF);
-            out.write((int)(streamId >> 16) & 0xFF);
-            out.write((int)(streamId >> 24) & 0xFF);
-            out.write((int)(streamId >> 32) & 0xFF);
-            out.write((int)(streamId >> 40) & 0xFF);
-            out.write((int)(streamId >> 48) & 0xFF);
-            out.write((int)(streamId >> 56) & 0xFF);
+            wb[8] = (byte)((int)(streamId >> 0) & 0xFF);
+            wb[9] = (byte)((int)(streamId >> 8) & 0xFF);
+            wb[10] = (byte)((int)(streamId >> 16) & 0xFF);
+            wb[11] = (byte)((int)(streamId >> 24) & 0xFF);
+            wb[12] = (byte)((int)(streamId >> 32) & 0xFF);
+            wb[13] = (byte)((int)(streamId >> 40) & 0xFF);
+            wb[14] = (byte)((int)(streamId >> 48) & 0xFF);
+            wb[15] = (byte)((int)(streamId >> 56) & 0xFF);
+            
+            out.write(wb, 0, 16);
             
             if (payload != null && payload.length != 0) {
                 out.write(payload);
@@ -95,39 +97,40 @@ public enum RsRpcProtocol {
         }
     }
     
-    static void send(OutputStream out, long streamId, int type, int flags, long payload) {
+    static void send(OutputStream out, long streamId, int type, int flags, long payload, byte[] wb) {
         try {
             int len = 24;
             
-            out.write((len >> 0) & 0xFF);
-            out.write((len >> 8) & 0xFF);
-            out.write((len >> 16) & 0xFF);
-            out.write((len >> 24) & 0xFF);
+            wb[0] = (byte)((len >> 0) & 0xFF);
+            wb[1] = (byte)((len >> 8) & 0xFF);
+            wb[2] = (byte)((len >> 16) & 0xFF);
+            wb[3] = (byte)((len >> 24) & 0xFF);
             
-            out.write(type & 0xFF);
+            wb[4] = (byte)(type & 0xFF);
             
-            out.write((flags >> 0) & 0xFF);
-            out.write((flags >> 8) & 0xFF);
-            out.write((flags >> 16) & 0xFF);
+            wb[5] = (byte)((flags >> 0) & 0xFF);
+            wb[6] = (byte)((flags >> 8) & 0xFF);
+            wb[7] = (byte)((flags >> 16) & 0xFF);
 
-            out.write((int)(streamId >> 0) & 0xFF);
-            out.write((int)(streamId >> 8) & 0xFF);
-            out.write((int)(streamId >> 16) & 0xFF);
-            out.write((int)(streamId >> 24) & 0xFF);
-            out.write((int)(streamId >> 32) & 0xFF);
-            out.write((int)(streamId >> 40) & 0xFF);
-            out.write((int)(streamId >> 48) & 0xFF);
-            out.write((int)(streamId >> 56) & 0xFF);
+            wb[8] = (byte)((int)(streamId >> 0) & 0xFF);
+            wb[9] = (byte)((int)(streamId >> 8) & 0xFF);
+            wb[10] = (byte)((int)(streamId >> 16) & 0xFF);
+            wb[11] = (byte)((int)(streamId >> 24) & 0xFF);
+            wb[12] = (byte)((int)(streamId >> 32) & 0xFF);
+            wb[13] = (byte)((int)(streamId >> 40) & 0xFF);
+            wb[14] = (byte)((int)(streamId >> 48) & 0xFF);
+            wb[15] = (byte)((int)(streamId >> 56) & 0xFF);
+            
+            wb[16] = (byte)((payload >> 0) & 0xFF);
+            wb[17] = (byte)((payload >> 8) & 0xFF);
+            wb[18] = (byte)((payload >> 16) & 0xFF);
+            wb[19] = (byte)((payload >> 24) & 0xFF);
+            wb[20] = (byte)((payload >> 32) & 0xFF);
+            wb[21] = (byte)((payload >> 40) & 0xFF);
+            wb[22] = (byte)((payload >> 48) & 0xFF);
+            wb[23] = (byte)((payload >> 56) & 0xFF);
 
-            out.write((int)(payload >> 0) & 0xFF);
-            out.write((int)(payload >> 8) & 0xFF);
-            out.write((int)(payload >> 16) & 0xFF);
-            out.write((int)(payload >> 24) & 0xFF);
-            out.write((int)(payload >> 32) & 0xFF);
-            out.write((int)(payload >> 40) & 0xFF);
-            out.write((int)(payload >> 48) & 0xFF);
-            out.write((int)(payload >> 56) & 0xFF);
-
+            out.write(wb, 0, len);
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
@@ -135,60 +138,27 @@ public enum RsRpcProtocol {
     
     static final byte[] EMPTY = new byte[0];
 
-    public static void receive(InputStream in, RsRpcReceive onReceive) {
+    public static void receive(InputStream in, byte[] hb, RsRpcReceive onReceive) {
         try {
-            int b1 = in.read();
-            int b2 = in.read();
-            int b3 = in.read();
-            int b4 = in.read();
-            
-            if ((b1 < 0) || (b2 < 0) || (b3 < 0) || (b4 < 0)) {
-                onReceive.onError(-1, "Channel/Connection closed (@ len)");
-                return;
-            }
-            
-            int len = (b1) | (b2 << 8) | (b3 << 16) | (b4 << 24);
-            
-            int type = in.read();
-            
-            if (type < 0) {
-                onReceive.onError(-1, "Channel/Connection closed (@ type)");
-                return;
-            }
-            
-            b1 = in.read();
-            b2 = in.read();
-            b3 = in.read();
-            
-            if ((b1 < 0) || (b2 < 0) || (b3 < 0)) {
-                onReceive.onError(-1, "Channel/Connection closed (@ flags)");
-                return;
-            }
-            
-            int flags = (b1) | (b2 << 8) | (b3 << 16);
-            
-            b1 = in.read();
-            b2 = in.read();
-            b3 = in.read();
-            b4 = in.read();
-            int b5 = in.read();
-            int b6 = in.read();
-            int b7 = in.read();
-            int b8 = in.read();
 
-            if ((b1 < 0) || (b2 < 0) || (b3 < 0) || (b4 < 0)
-                    || (b5 < 0) || (b6 < 0) || (b7 < 0) || (b8 < 0)) {
-                onReceive.onError(-1, "Channel/Connection closed (@ streamId)");
+            if (RpcHelper.readFully(in, hb, 16) < 16) {
+                onReceive.onError(-1, "Channel/Connection closed");
                 return;
             }
             
-            long streamId = (b1) | (b2 << 8) | (b3 << 16) | (((long)b4) << 24)
-                    | (((long)b5) << 32) | (((long)b6) << 40) | (((long)b7) << 48) | (((long)b8) << 56);
+            int len = (hb[0] & 0xFF) | ((hb[1] & 0xFF) << 8) | ((hb[2] & 0xFF) << 16) | ((hb[3] & 0xFF) << 24);
+            
+            byte type = hb[4];
+            
+            int flags = ((hb[5] & 0xFF)) | ((hb[6] & 0xFF) << 8) | ((hb[7] & 0xFF) << 16);
+            
+            long streamId = (hb[8] & 0xFFL) | ((hb[9] & 0xFFL) << 8) | ((hb[10] & 0xFFL) << 16) | ((hb[11] & 0xFFL) << 24)
+                    | ((hb[12] & 0xFFL) << 32) | ((hb[13] & 0xFFL) << 40) | ((hb[14] & 0xFFL) << 48) | ((hb[15] & 0xFFL) << 56);
             
             switch (type) {
             case TYPE_NEW: {
                 if (len > 16) {
-                    String function = readString(in, len - 16);
+                    String function = RpcHelper.readUtf8(in, len - 16);
                     onReceive.onNew(streamId, function);
                 } else {
                     onReceive.onNew(streamId, "");
@@ -197,7 +167,7 @@ public enum RsRpcProtocol {
             }
             case TYPE_CANCEL: {
                 if (len > 16) {
-                    String reason = readString(in, len - 16);
+                    String reason = RpcHelper.readUtf8(in, len - 16);
                     onReceive.onCancel(streamId, reason);
                 } else {
                     onReceive.onCancel(streamId, "");
@@ -208,7 +178,7 @@ public enum RsRpcProtocol {
             case TYPE_NEXT: {
                 if (len > 16) {
                     byte[] payload = new byte[len - 16];
-                    int r = readFully(in, payload);
+                    int r = RpcHelper.readFully(in, payload, len - 16);
                     onReceive.onNext(streamId, payload, r);
                 } else {
                     onReceive.onNext(streamId, EMPTY, 0);
@@ -217,7 +187,7 @@ public enum RsRpcProtocol {
             }
             case TYPE_ERROR: {
                 if (len > 16) {
-                    String reason = readString(in, len - 16);
+                    String reason = RpcHelper.readUtf8(in, len - 16);
                     onReceive.onError(streamId, reason);
                 } else {
                     onReceive.onError(streamId, "");
@@ -239,23 +209,13 @@ public enum RsRpcProtocol {
             
             case TYPE_REQUEST: {
                 if (len > 16) {
-                    b1 = in.read();
-                    b2 = in.read();
-                    b3 = in.read();
-                    b4 = in.read();
-                    b5 = in.read();
-                    b6 = in.read();
-                    b7 = in.read();
-                    b8 = in.read();
-                    
-                    if ((b1 < 0) || (b2 < 0) || (b3 < 0) || (b4 < 0)
-                            || (b5 < 0) || (b6 < 0) || (b7 < 0) || (b8 < 0)) {
+                    if (RpcHelper.readFully(in, hb, 8) < 8) {
                         onReceive.onError(streamId, "Channel/Connection closed (@ request)");
                         return;
                     }
                     
-                    long requested = (b1) | (b2 << 8) | (b3 << 16) | (((long)b4) << 24)
-                            | (((long)b5) << 32) | (((long)b6) << 40) | (((long)b7) << 48) | (((long)b8) << 56);
+                    long requested = (hb[0] & 0xFFL) | ((hb[1] & 0xFFL) << 8) | ((hb[2] & 0xFFL) << 16) | ((hb[3] & 0xFFL) << 24)
+                            | ((hb[4] & 0xFFL) << 32) | ((hb[5] & 0xFFL) << 40) | ((hb[6] & 0xFFL) << 48) | ((hb[7] & 0xFFL) << 56);
                     
                     onReceive.onRequested(streamId, requested);
                 } else {
@@ -267,7 +227,7 @@ public enum RsRpcProtocol {
             default: {
                 if (len > 16) {
                     byte[] payload = new byte[len - 16];
-                    int r = readFully(in,payload);
+                    int r = RpcHelper.readFully(in, payload, len - 16);
                     onReceive.onUnknown(type, flags, streamId, payload, r);
                 } else {
                     onReceive.onUnknown(type, flags, streamId, EMPTY, 0);
@@ -280,125 +240,6 @@ public enum RsRpcProtocol {
         }
     }
     
-    static int readFully(InputStream in, byte[] output) throws IOException {
-        int offset = 0;
-        int remaining = output.length;
-        
-        for (;;) {
-            int a = in.read(output, offset, remaining);
-            if (a < 0) {
-                break;
-            }
-            offset += a;
-            remaining -= a;
-            if (remaining == 0) {
-                break;
-            }
-        }
-        
-        return offset;
-    }
-    
-    static String readString(InputStream in, int payloadLength) throws IOException {
-        StringBuilder sb = new StringBuilder(payloadLength);
-        
-        for (;;) {
-            if (payloadLength == 0) {
-                break;
-            }
-            int b = in.read();
-
-            payloadLength--;
-
-            if (b < 0) {
-                break;
-            } else
-            if ((b & 0x80) == 0) {
-                sb.append((char)b);
-            } else
-            if ((b & 0b1110_0000) == 0b1100_0000) {
-                
-                if (payloadLength-- == 0) {
-                    break;
-                }
-                
-                int b1 = in.read();
-                if (b1 < 0) {
-                    break;
-                }
-                
-                int c = ((b & 0b1_1111) << 6) | (b1 & 0b0011_1111);
-                sb.append((char)c);
-            } else
-            if ((b & 0b1111_0000) == 0b1110_0000) {
-                if (payloadLength-- == 0) {
-                    break;
-                }
-                
-                int b1 = in.read();
-
-                if (b1 < 0) {
-                    break;
-                }
-                
-                if (payloadLength-- == 0) {
-                    break;
-                }
-                
-                int b2 = in.read();
-
-                if (b2 < 0) {
-                    break;
-                }
-                
-                int c = ((b & 0b1111) << 12) | ((b1 & 0b11_1111) << 6)
-                        | ((b2 & 0b11_1111));
-                
-                sb.append((char)c);
-            } else
-            if ((b & 0b1111_1000) == 0b1111_0000) {
-                if (payloadLength-- == 0) {
-                    break;
-                }
-                
-                int b1 = in.read();
-
-                if (b1 < 0) {
-                    break;
-                }
-                
-                if (payloadLength-- == 0) {
-                    break;
-                }
-                
-                int b2 = in.read();
-
-                if (b2 < 0) {
-                    break;
-                }
-
-                if (payloadLength-- == 0) {
-                    break;
-                }
-                
-                int b3 = in.read();
-
-                if (b3 < 0) {
-                    break;
-                }
-
-                int c = ((b & 0b111) << 18) 
-                        | ((b1 & 0b11_1111) << 12)
-                        | ((b1 & 0b11_1111) << 6)
-                        | ((b2 & 0b11_1111));
-                
-                sb.append((char)c);
-            }
-        }
-        
-        return sb.toString();
-    }
-    
     static byte[] utf8(String s) {
         if (s == null || s.isEmpty()) {
             return EMPTY;
@@ -406,16 +247,16 @@ public enum RsRpcProtocol {
         return s.getBytes(StandardCharsets.UTF_8);
     }
     
-    public static void open(OutputStream out, long streamId, String functionName) {
-        send(out, streamId, TYPE_NEW, 0, utf8(functionName));
+    public static void open(OutputStream out, long streamId, String functionName, byte[] wb) {
+        send(out, streamId, TYPE_NEW, 0, utf8(functionName), wb);
     }
     
-    public static void cancel(OutputStream out, long streamId, String reason) {
-        send(out, streamId, TYPE_CANCEL, 0, utf8(reason));
+    public static void cancel(OutputStream out, long streamId, String reason, byte[] wb) {
+        send(out, streamId, TYPE_CANCEL, 0, utf8(reason), wb);
     }
     
-    public static void cancel(OutputStream out, long streamId, Throwable reason) {
-        send(out, streamId, TYPE_CANCEL, 0, errorBytes(reason));
+    public static void cancel(OutputStream out, long streamId, Throwable reason, byte[] wb) {
+        send(out, streamId, TYPE_CANCEL, 0, errorBytes(reason), wb);
     }
     
     public static byte[] errorBytes(Throwable reason) {
@@ -427,37 +268,37 @@ public enum RsRpcProtocol {
         return bout.toByteArray();
     }
     
-    public static void next(OutputStream out, long streamId, byte[] data) {
-        send(out, streamId, TYPE_NEXT, 0, data);
+    public static void next(OutputStream out, long streamId, byte[] data, byte[] wb) {
+        send(out, streamId, TYPE_NEXT, 0, data, wb);
     }
     
-    public static void next(OutputStream out, long streamId, String text) {
-        next(out, streamId, utf8(text));
+    public static void next(OutputStream out, long streamId, String text, byte[] wb) {
+        next(out, streamId, utf8(text), wb);
     }
     
-    public static void error(OutputStream out, long streamId, String reason) {
-        send(out, streamId, TYPE_ERROR, 0, utf8(reason));
+    public static void error(OutputStream out, long streamId, String reason, byte[] wb) {
+        send(out, streamId, TYPE_ERROR, 0, utf8(reason), wb);
     }
     
-    public static void error(OutputStream out, long streamId, Throwable reason) {
-        send(out, streamId, TYPE_ERROR, 0, errorBytes(reason));
+    public static void error(OutputStream out, long streamId, Throwable reason, byte[] wb) {
+        send(out, streamId, TYPE_ERROR, 0, errorBytes(reason), wb);
     }
     
-    public static void complete(OutputStream out, long streamId) {
-        send(out, streamId, TYPE_COMPLETE, 0, EMPTY);
+    public static void complete(OutputStream out, long streamId, byte[] wb) {
+        send(out, streamId, TYPE_COMPLETE, 0, EMPTY, wb);
     }
     
     static final byte[] REQUEST_UNBOUNDED = { (byte)0xFF, (byte)0xFF, (byte)0xFF, (byte)0xFF, 
             (byte)0xFF, (byte)0xFF, (byte)0xFF, (byte)0x7F };
     
-    public static void request(OutputStream out, long streamId, long requested) {
+    public static void request(OutputStream out, long streamId, long requested, byte[] wb) {
         if (requested < 0 || requested == Long.MAX_VALUE) {
-            send(out, streamId, TYPE_REQUEST, 0, REQUEST_UNBOUNDED);
+            send(out, streamId, TYPE_REQUEST, 0, REQUEST_UNBOUNDED, wb);
         } else
         if (requested <= 0xFFFFFF) {
-            send(out, streamId, TYPE_REQUEST, (int)requested & 0xFFFFFF, EMPTY);
+            send(out, streamId, TYPE_REQUEST, (int)requested & 0xFFFFFF, EMPTY, wb);
         } else {
-            send(out, streamId, TYPE_REQUEST, 0, requested);
+            send(out, streamId, TYPE_REQUEST, 0, requested, wb);
         }
     }
     

@@ -72,12 +72,22 @@ public enum RpcSocketManager {
             
             io[0] = new RpcIOManager(reader, in, writer, out, (streamId, function, iom) -> {
                 Object action = serverMap.get(function);
+                if (action == null) {
+                    UnsignalledExceptions.onErrorDropped(new IllegalStateException("Function " + function + " not found"));
+                    return false;
+                }
                 return RpcServiceMapper.dispatchServer(streamId, action, iom, ctx);
-            }, server);
+            }, 
+            () -> {
+                RpcServiceMapper.invokeDone(localAPI, ctx);
+            },
+            server);
             
-            RpcServiceMapper.invokeInit(localAPI, ctx);
+            reader.schedule(() -> { RpcServiceMapper.invokeInit(localAPI, ctx); });
         } else {
-            io[0] = new RpcIOManager(reader, in, writer, out, (streamId, function, iom) -> false, server);
+            io[0] = new RpcIOManager(reader, in, writer, out, (streamId, function, iom) -> false, () -> {
+                
+            }, server);
         }
         
         io[0].start();

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.net.*;
 import java.util.Objects;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import rsc.flow.Cancellation;
 import rsc.scheduler.*;
@@ -55,19 +56,26 @@ public final class RpcServer<T> {
             throw new RuntimeException(e);
         }
         
+        return setup(ssocket);
+    }
+    
+    AutoCloseable setup(ServerSocket ssocket) {
         Scheduler acceptor = new ParallelScheduler(1, "akarnokd-reactive-rpc-connection", true);
-        
+
+        AtomicBoolean done = new AtomicBoolean();
         Cancellation c = acceptor.schedule(() -> {
-            socketAccept(ssocket);
+            socketAccept(ssocket, done);
         });
         
         return () -> {
-            c.dispose();
-            ssocket.close();
+            if (done.compareAndSet(false, true)) {
+                c.dispose();
+                ssocket.close();
+            }
         };
     }
     
-    void socketAccept(ServerSocket ssocket) {
+    void socketAccept(ServerSocket ssocket, AtomicBoolean done) {
         while (!Thread.currentThread().isInterrupted()) {
             Socket socket;
             
@@ -75,7 +83,9 @@ public final class RpcServer<T> {
                 socket = ssocket.accept();
                 
             } catch (IOException e) {
-                UnsignalledExceptions.onErrorDropped(e);
+                if (!done.get()) {
+                    UnsignalledExceptions.onErrorDropped(e);
+                }
                 return;
             }
             
@@ -94,6 +104,13 @@ public final class RpcServer<T> {
     }
     
     public AutoCloseable start(InetAddress localAddress, int port) {
-        return null;
+        ServerSocket ssocket;
+        try {
+            ssocket = new ServerSocket(port, 50, localAddress);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        
+        return setup(ssocket);
     }
 }

@@ -9,6 +9,7 @@ import org.reactivestreams.Publisher;
 
 import rsc.flow.Cancellation;
 import rsc.publisher.Px;
+import rsc.scheduler.ImmediateScheduler;
 
 public class BasicPingPongTest {
 
@@ -158,6 +159,59 @@ public class BasicPingPongTest {
             api.umap(o -> Px.wrap(o).map(v -> -v));
             
             Thread.sleep(5000);
+            
+            cancel.get().dispose();
+        }
+        
+    }
+    
+    interface StreamPerfClientAPI {
+        @RsRpc
+        Publisher<Integer> range(Publisher<Integer> count);
+    }
+    
+    static final class StreamPerfServerAPI {
+        @RsRpc
+        public Publisher<Integer> range(RpcStreamContext<?> ctx, Publisher<Integer> count) {
+//            System.out.println("Server: range");
+            return Px.wrap(count).concatMap(v -> {
+//                System.out.println("Server: " + v);
+                return Px.range(1, v);
+            });
+        }
+    }
+    
+    @Test
+    public void streamPerf() throws Exception {
+        
+        RpcServer<Void> server = RpcServer.createLocal(new StreamPerfServerAPI());
+        RpcClient<StreamPerfClientAPI> client = RpcClient.createRemote(StreamPerfClientAPI.class);
+        
+        AtomicReference<Cancellation> cancel = new AtomicReference<>();
+        
+        try (AutoCloseable c = server.start(12345)) {
+            
+            StreamPerfClientAPI api = client.connect(InetAddress.getLocalHost(), 12345, cancel::set);
+
+            int n = 100_000;
+            
+            for (int i = 1; i <= n; i *= 10) {
+            
+                System.out.printf("%6d | %n", i);
+                
+                long t = System.nanoTime();
+                
+                long count = Px.wrap(api.range(Px.just(i)))
+                .observeOn(ImmediateScheduler.instance())
+                .count()
+                .blockingLast();
+                
+                System.out.printf("%6d", count);
+                
+                t = System.nanoTime() - t;
+                
+                System.out.printf("          %.3f ms/op%n", (t / 1024d / 1024d));
+            }
             
             cancel.get().dispose();
         }

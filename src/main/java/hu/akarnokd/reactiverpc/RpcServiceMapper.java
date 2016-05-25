@@ -227,6 +227,7 @@ public enum RpcServiceMapper {
             RpcServerSyncMap rpcServerSyncMap = (RpcServerSyncMap) action;
             return rpcServerSyncMap.map(streamId, ctx, io);
         }
+        UnsignalledExceptions.onErrorDropped(new IllegalStateException("Unsupported action: " + action.getClass()));
         return false;
     }
     
