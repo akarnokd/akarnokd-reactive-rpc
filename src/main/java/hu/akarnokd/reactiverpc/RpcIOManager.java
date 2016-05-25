@@ -3,6 +3,7 @@ package hu.akarnokd.reactiverpc;
 import java.io.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
+import java.util.function.IntConsumer;
 
 import org.reactivestreams.*;
 
@@ -144,7 +145,7 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
     }
 
     @Override
-    public void onNext(long streamId, byte[] payload, int count, int read) {
+    public void onNext(long streamId, int flags, byte[] payload, int count, int read) {
         if (logMessages) {
             System.out.printf("%s/onNext/%d/len=%d/%d%n", server ? "server" : "client", streamId, payload.length, read);
         }
@@ -159,7 +160,7 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
                 Object o;
                 
                 try {
-                    o = decode(payload);
+                    o = decode(flags, payload, count);
                 } catch (IOException | ClassNotFoundException ex) {
                     sendCancel(streamId, ex.toString());
                     s.onError(ex);
@@ -183,75 +184,81 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
     static final byte PAYLOAD_INT = 1;
     static final byte PAYLOAD_LONG = 2;
     static final byte PAYLOAD_STRING = 3;
+    static final byte PAYLOAD_BYTES = 4;
     
-    Object decode(byte[] payload) throws IOException, ClassNotFoundException {
-        byte type = payload[0];
-        if (type == PAYLOAD_INT) {
-            int v = (payload[1] & 0xFF)
-                    | ((payload[2] & 0xFF) << 8)
-                    | ((payload[3] & 0xFF) << 16)
-                    | ((payload[4] & 0xFF) << 24)
+    Object decode(int flags, byte[] payload, int len) throws IOException, ClassNotFoundException {
+        if (flags == PAYLOAD_INT) {
+            int v = (payload[0] & 0xFF)
+                    | ((payload[1] & 0xFF) << 8)
+                    | ((payload[2] & 0xFF) << 16)
+                    | ((payload[3] & 0xFF) << 24)
                     ;
             return v;
         } else
-        if (type == PAYLOAD_LONG) {
-            long v = (payload[1] & 0xFFL)
-                    | ((payload[2] & 0xFFL) << 8)
-                    | ((payload[3] & 0xFFL) << 16)
-                    | ((payload[4] & 0xFFL) << 24)
-                    | ((payload[5] & 0xFFL) << 32)
-                    | ((payload[6] & 0xFFL) << 40)
-                    | ((payload[7] & 0xFFL) << 48)
-                    | ((payload[8] & 0xFFL) << 56)
+        if (flags == PAYLOAD_LONG) {
+            long v = (payload[0] & 0xFFL)
+                    | ((payload[1] & 0xFFL) << 8)
+                    | ((payload[2] & 0xFFL) << 16)
+                    | ((payload[3] & 0xFFL) << 24)
+                    | ((payload[4] & 0xFFL) << 32)
+                    | ((payload[5] & 0xFFL) << 40)
+                    | ((payload[6] & 0xFFL) << 48)
+                    | ((payload[7] & 0xFFL) << 56)
                     ;
             return v;
         } else
-        if (type == PAYLOAD_STRING) {
-            return RpcHelper.readUtf8(payload, 1, payload.length - 1);
+        if (flags == PAYLOAD_STRING) {
+            return RpcHelper.readUtf8(payload, 0, len);
+        } else
+        if (flags == PAYLOAD_BYTES) {
+            byte[] r = new byte[len];
+            System.arraycopy(payload, 0, r, 0, len);
+            return r;
         }
         
         ByteArrayInputStream bin = new ByteArrayInputStream(payload);
-        bin.skip(1);
         ObjectInputStream oin = new ObjectInputStream(bin);
         return oin.readObject();
     }
     
-    byte[] encode(Object o) throws IOException {
+    byte[] encode(Object o, IntConsumer flagOut) throws IOException {
         
         if (o instanceof Integer) {
-            byte[] r = new byte[5];
-            r[0] = PAYLOAD_INT;
+            flagOut.accept(PAYLOAD_INT);
+            byte[] r = new byte[4];
             int v = (Integer)o;
-            r[1] = (byte)(v & 0xFF);
-            r[2] = (byte)((v >> 8) & 0xFF);
-            r[3] = (byte)((v >> 16) & 0xFF);
-            r[4] = (byte)((v >> 24) & 0xFF);
+            r[0] = (byte)(v & 0xFF);
+            r[1] = (byte)((v >> 8) & 0xFF);
+            r[2] = (byte)((v >> 16) & 0xFF);
+            r[3] = (byte)((v >> 24) & 0xFF);
             return r;
         } else
         if (o instanceof Long) {
-            byte[] r = new byte[9];
-            r[0] = PAYLOAD_LONG;
+            flagOut.accept(PAYLOAD_LONG);
+            byte[] r = new byte[8];
             long v = (Long)o;
-            r[1] = (byte)(v & 0xFF);
-            r[2] = (byte)((v >> 8) & 0xFF);
-            r[3] = (byte)((v >> 16) & 0xFF);
-            r[4] = (byte)((v >> 24) & 0xFF);
-            r[5] = (byte)((v >> 32) & 0xFF);
-            r[6] = (byte)((v >> 40) & 0xFF);
-            r[7] = (byte)((v >> 48) & 0xFF);
-            r[8] = (byte)((v >> 56) & 0xFF);
+            r[0] = (byte)(v & 0xFF);
+            r[1] = (byte)((v >> 8) & 0xFF);
+            r[2] = (byte)((v >> 16) & 0xFF);
+            r[3] = (byte)((v >> 24) & 0xFF);
+            r[4] = (byte)((v >> 32) & 0xFF);
+            r[5] = (byte)((v >> 40) & 0xFF);
+            r[6] = (byte)((v >> 48) & 0xFF);
+            r[7] = (byte)((v >> 56) & 0xFF);
             return r;
         } else
         if (o instanceof String) {
-            byte[] text = RsRpcProtocol.utf8((String)o);
-            byte[] r = new byte[text.length + 1];
-            r[0] = PAYLOAD_STRING;
-            System.arraycopy(text, 0, r, 1, text.length);
-            return r;
+            flagOut.accept(PAYLOAD_STRING);
+            return RsRpcProtocol.utf8((String)o);
+        } else
+        if (o instanceof byte[]) {
+            flagOut.accept(PAYLOAD_BYTES);
+            return ((byte[])o).clone();
         }
         
+        flagOut.accept(PAYLOAD_OBJECT);
+        
         ByteArrayOutputStream bout = new ByteArrayOutputStream();
-        bout.write(PAYLOAD_OBJECT);
         
         try (ObjectOutputStream oout = new ObjectOutputStream(bout)) {
             oout.writeObject(o);
@@ -342,15 +349,43 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
     
     public void sendNext(long streamId, Object o) throws IOException {
         
-        byte[] payload = encode(o);
+        OnNextTask task = new OnNextTask(streamId, out, writeBuffer, server, logMessages ? o : null);
         
-        writer.schedule(() -> {
+        task.payload = encode(o, task);
+        
+        writer.schedule(task);
+    }
+    
+    static final class OnNextTask implements Runnable, IntConsumer {
+        final long streamId;
+        final OutputStream out;
+        final byte[] writeBuffer;
+        final boolean server;
+        final Object object;
+        byte[] payload;
+        int flags;
+
+        public OnNextTask(long streamId, OutputStream out, byte[] writeBuffer, boolean server, Object object) {
+            this.streamId = streamId;
+            this.out = out;
+            this.server = server;
+            this.writeBuffer = writeBuffer;
+            this.object = object;
+        }
+        
+        @Override
+        public void run() {
             if (logMessages) {
-                System.out.printf("%s/sendNext/%d/%s%n", server ? "server" : "client", streamId, o);
+                System.out.printf("%s/sendNext/%d/%s%n", server ? "server" : "client", streamId, object);
             }
-            RsRpcProtocol.next(out, streamId, payload, writeBuffer);
+            RsRpcProtocol.next(out, streamId, flags, payload, writeBuffer);
             flush(out);
-        });
+        }
+        
+        @Override
+        public void accept(int value) {
+            this.flags = value;
+        }
     }
 
     public void sendError(long streamId, Throwable e) {

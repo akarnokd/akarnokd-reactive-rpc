@@ -49,11 +49,12 @@ enum RsRpcProtocol {
         /**
          * Called when the stream contains an NEXT frame.
          * @param streamId the stream identifier
+         * @param flags the flags associated with the NEXT frame
          * @param payload the payload bytes, its length is derived from the frame length
          * @param count the number of relevant bytes in the payload
          * @param read the number of read bytes, allows deciding what to do for partial reads
          */
-        void onNext(long streamId, byte[] payload, int count, int read);
+        void onNext(long streamId, int flags, byte[] payload, int count, int read);
         
         void onError(long streamId, String reason);
         
@@ -197,9 +198,9 @@ enum RsRpcProtocol {
                         payload = new byte[len];
                     }
                     int r = RpcHelper.readFully(in, payload, len);
-                    onReceive.onNext(streamId, payload, len, r);
+                    onReceive.onNext(streamId, flags, payload, len, r);
                 } else {
-                    onReceive.onNext(streamId, EMPTY, 0, 0);
+                    onReceive.onNext(streamId, flags, EMPTY, 0, 0);
                 }
                 break;
             }
@@ -290,12 +291,12 @@ enum RsRpcProtocol {
         return bout.toByteArray();
     }
     
-    public static void next(OutputStream out, long streamId, byte[] data, byte[] wb) {
-        send(out, streamId, TYPE_NEXT, 0, data, wb);
+    public static void next(OutputStream out, long streamId, int flags, byte[] data, byte[] wb) {
+        send(out, streamId, TYPE_NEXT, flags, data, wb);
     }
     
-    public static void next(OutputStream out, long streamId, String text, byte[] wb) {
-        next(out, streamId, utf8(text), wb);
+    public static void next(OutputStream out, long streamId, int flags, String text, byte[] wb) {
+        next(out, streamId, flags, utf8(text), wb);
     }
     
     public static void error(OutputStream out, long streamId, String reason, byte[] wb) {
