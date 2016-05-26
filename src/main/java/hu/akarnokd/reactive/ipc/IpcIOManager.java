@@ -8,7 +8,7 @@ import rsc.scheduler.Scheduler;
 import rsc.scheduler.Scheduler.Worker;
 import rsc.util.UnsignalledExceptions;
 
-public final class IpcEndpoint implements Closeable {
+public final class IpcIOManager implements Closeable, IpcSend {
 
     IpcFileInterop input;
     
@@ -57,7 +57,7 @@ public final class IpcEndpoint implements Closeable {
     
     static final byte[] EMPTY = new byte[0];
     
-    public IpcEndpoint(Scheduler scheduler, Socket socket, String fileNameBase, 
+    public IpcIOManager(Scheduler scheduler, Socket socket, String fileNameBase, 
             int maxSize, IpcReceive receive, boolean server) throws IOException {
         
         this.fileNameBase = fileNameBase;
@@ -382,6 +382,7 @@ public final class IpcEndpoint implements Closeable {
         return false;
     }
     
+    @Override
     public void sendNew(long streamId, String function) {
         byte[] b = toBytes(function);
         if (b.length > size - 32) {
@@ -409,6 +410,7 @@ public final class IpcEndpoint implements Closeable {
         });
     }
     
+    @Override
     public void sendCancel(long streamId, String reason) {
         byte[] b = toBytes(reason);
         if (b.length > size - 32) {
@@ -436,6 +438,7 @@ public final class IpcEndpoint implements Closeable {
         });
     }
     
+    @Override
     public void sendNext(long streamId, Object value) throws IOException {
         if (value instanceof Integer) {
             sendInt(streamId, (Integer)value);
@@ -585,6 +588,7 @@ public final class IpcEndpoint implements Closeable {
         });
     }
     
+    @Override
     public void sendError(long streamId, Throwable e) {
         ByteArrayOutputStream bout = new ByteArrayOutputStream();
         OutputStreamWriter osw = new OutputStreamWriter(bout, StandardCharsets.UTF_8);
@@ -618,6 +622,7 @@ public final class IpcEndpoint implements Closeable {
         });
     }
     
+    @Override
     public void sendComplete(long streamId) {
         dataWriter.schedule(() -> {
             IpcFileInterop outp = output;
@@ -636,6 +641,7 @@ public final class IpcEndpoint implements Closeable {
         });
     }
     
+    @Override
     public void sendRequested(long streamId, long r) {
         dataWriter.schedule(() -> {
             IpcFileInterop outp = output;
