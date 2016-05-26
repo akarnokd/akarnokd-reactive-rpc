@@ -1,6 +1,6 @@
 package hu.akarnokd.reactive.ipc;
 
-public interface IpcReceive {
+public interface RsIpcProtocol {
     int TYPE_NEW = 1;
     
     int TYPE_CANCEL = 2;
@@ -25,18 +25,4 @@ public interface IpcReceive {
     int PAYLOAD_STRING = 3;
     
     int PAYLOAD_BYTES = 4;
-    
-    void onNew(long streamId, String function);
-    
-    void onNext(long streamId, Object o);
-
-    void onError(long streamId, String reason);
-
-    void onError(long streamId, Throwable e);
-    
-    void onComplete(long streamId);
-    
-    void onCancel(long streamId, String reason);
-    
-    void onRequested(long streamId, long n);
 }

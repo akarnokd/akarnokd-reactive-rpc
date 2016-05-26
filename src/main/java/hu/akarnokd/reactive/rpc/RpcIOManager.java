@@ -1,43 +1,26 @@
 package hu.akarnokd.reactive.rpc;
 
 import java.io.*;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.IntConsumer;
 
-import org.reactivestreams.*;
-
+import hu.akarnokd.reactive.pc.*;
 import rsc.scheduler.Scheduler.Worker;
 import rsc.util.UnsignalledExceptions;
 
-final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
-    
-    static volatile boolean logMessages = false;
-    
-    @FunctionalInterface
-    public interface OnNewStream {
-        boolean onNew(long streamId, String function, RpcIOManager manager);
-    }
+final class RpcIOManager implements RsRpcProtocol.RsRpcReceive, RsPcSend {
     
     final Worker reader;
     
     final Worker writer;
     
-    final ConcurrentMap<Long, Object> streams;
-
     final InputStream in;
     
     final OutputStream out;
     
-    final OnNewStream onNew;
-    
-    final AtomicLong streamIds;
-    
     volatile boolean closed;
     
     final AtomicBoolean terminateOnce;
-    
-    final Runnable onTerminate;
     
     final boolean server;
     
@@ -45,21 +28,19 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
     
     final byte[] writeBuffer;
     
+    final RsPcReceive receive;
+    
     public RpcIOManager(Worker reader, InputStream in, 
             Worker writer, OutputStream out,
-            OnNewStream onNew,
-            Runnable onTerminate,
+            RsPcReceive receive,
             boolean server) {
         this.reader = reader;
         this.writer = writer;
         this.in = in;
         this.out = out;
-        this.onNew = onNew;
         this.terminateOnce = new AtomicBoolean();
-        this.onTerminate = onTerminate;
-        this.streams = new ConcurrentHashMap<>();
-        this.streamIds = new AtomicLong((server ? Long.MIN_VALUE : 0) + 1);
         this.server = server;
+        this.receive = receive;
         this.readBuffer = new byte[16];
         this.writeBuffer = new byte[32];
     }
@@ -96,98 +77,42 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
         }
     }
     
-    public long newStreamId() {
-        return streamIds.getAndIncrement();
-    }
-    
-    public void registerSubscription(long streamId, Subscription s) {
-        if (streams.putIfAbsent(streamId, s) != null) {
-            throw new IllegalStateException("StreamID " + streamId + " already registered");
-        }
-    }
-    
-    public void registerSubscriber(long streamId, Subscriber<?> s) {
-        if (streams.putIfAbsent(streamId, s) != null) {
-            throw new IllegalStateException("StreamID " + streamId + " already registered");
-        }
-    }
-    
     @Override
     public void onNew(long streamId, String function) {
-        if (logMessages) {
-            System.out.printf("%s/onNew/%d/%s%n", server ? "server" : "client", streamId, function);
-        }
-        if (!onNew.onNew(streamId, function, this)) {
-            writer.schedule(() -> {
-                if (logMessages) {
-                    System.out.printf("%s/onNew/%d/%s%n", server ? "server" : "client", streamId, "New stream(" + function + ") rejected");
-                }
-                RsRpcProtocol.cancel(out, streamId, "New stream(" + function + ") rejected", writeBuffer);
-            });
-        }
+        receive.onNew(streamId, function);
     }
 
     @Override
     public void onCancel(long streamId, String reason) {
-        if (logMessages) {
-            System.out.printf("%s/onCancel/%d/%s%n", server ? "server" : "client", streamId, reason);
-        }
-        Object remove = streams.get(streamId);
-        if (remove != null) {
-            // TODO log reason?
-            if (remove instanceof Subscription) {
-                Subscription s = (Subscription) remove;
-                s.cancel();
-            } else {
-                UnsignalledExceptions.onErrorDropped(new IllegalStateException("Stream " + streamId + " directed at wrong receiver: " + remove.getClass()));
-            }
-        }
+        receive.onCancel(streamId, reason);
     }
 
     @Override
     public void onNext(long streamId, int flags, byte[] payload, int count, int read) {
-        if (logMessages) {
-            System.out.printf("%s/onNext/%d/len=%d/%d%n", server ? "server" : "client", streamId, payload.length, read);
-        }
-        Object local = streams.get(streamId);
-        if (local instanceof Subscriber) {
-            @SuppressWarnings("unchecked")
-            Subscriber<Object> s = (Subscriber<Object>)local;
+        if (count != read) {
+            receive.onError(streamId, new IOException("Partial value received: expected = " + payload.length + ", actual = " + read));
+        } else {
+            Object o;
             
-            if (count != read) {
-                s.onError(new IOException("Partial value received: expected = " + payload.length + ", actual = " + read));
-            } else {
-                Object o;
-                
-                try {
-                    o = decode(flags, payload, count);
-                } catch (IOException | ClassNotFoundException ex) {
-                    sendCancel(streamId, ex.toString());
-                    s.onError(ex);
-                    return;
-                }
-                
-                if (logMessages) {
-                    System.out.printf("%s/onNext/%d/value=%s%n", server ? "server" : "client", streamId, o);
-                }
-                try {
-                    s.onNext(o);
-                } catch (Throwable ex) {
-                    sendCancel(streamId, ex.toString());
-                    s.onError(ex);
-                }
+            try {
+                o = decode(flags, payload, count);
+            } catch (IOException | ClassNotFoundException ex) {
+                sendCancel(streamId, ex.toString());
+                receive.onError(streamId, ex);
+                return;
+            }
+            
+            try {
+                receive.onNext(streamId, o);
+            } catch (Throwable ex) {
+                sendCancel(streamId, ex.toString());
+                receive.onError(streamId, ex);
             }
         }
     }
     
-    static final byte PAYLOAD_OBJECT = 0;
-    static final byte PAYLOAD_INT = 1;
-    static final byte PAYLOAD_LONG = 2;
-    static final byte PAYLOAD_STRING = 3;
-    static final byte PAYLOAD_BYTES = 4;
-    
     Object decode(int flags, byte[] payload, int len) throws IOException, ClassNotFoundException {
-        if (flags == PAYLOAD_INT) {
+        if (flags == RsRpcProtocol.PAYLOAD_INT) {
             int v = (payload[0] & 0xFF)
                     | ((payload[1] & 0xFF) << 8)
                     | ((payload[2] & 0xFF) << 16)
@@ -195,7 +120,7 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
                     ;
             return v;
         } else
-        if (flags == PAYLOAD_LONG) {
+        if (flags == RsRpcProtocol.PAYLOAD_LONG) {
             long v = (payload[0] & 0xFFL)
                     | ((payload[1] & 0xFFL) << 8)
                     | ((payload[2] & 0xFFL) << 16)
@@ -207,10 +132,10 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
                     ;
             return v;
         } else
-        if (flags == PAYLOAD_STRING) {
+        if (flags == RsRpcProtocol.PAYLOAD_STRING) {
             return RpcHelper.readUtf8(payload, 0, len);
         } else
-        if (flags == PAYLOAD_BYTES) {
+        if (flags == RsRpcProtocol.PAYLOAD_BYTES) {
             if (payload == readBuffer) {
                 byte[] r = new byte[len];
                 System.arraycopy(payload, 0, r, 0, len);
@@ -227,7 +152,7 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
     byte[] encode(Object o, IntConsumer flagOut) throws IOException {
         
         if (o instanceof Integer) {
-            flagOut.accept(PAYLOAD_INT);
+            flagOut.accept(RsRpcProtocol.PAYLOAD_INT);
             byte[] r = new byte[4];
             int v = (Integer)o;
             r[0] = (byte)(v & 0xFF);
@@ -237,7 +162,7 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
             return r;
         } else
         if (o instanceof Long) {
-            flagOut.accept(PAYLOAD_LONG);
+            flagOut.accept(RsRpcProtocol.PAYLOAD_LONG);
             byte[] r = new byte[8];
             long v = (Long)o;
             r[0] = (byte)(v & 0xFF);
@@ -251,15 +176,15 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
             return r;
         } else
         if (o instanceof String) {
-            flagOut.accept(PAYLOAD_STRING);
+            flagOut.accept(RsRpcProtocol.PAYLOAD_STRING);
             return RsRpcProtocol.utf8((String)o);
         } else
         if (o instanceof byte[]) {
-            flagOut.accept(PAYLOAD_BYTES);
+            flagOut.accept(RsRpcProtocol.PAYLOAD_BYTES);
             return ((byte[])o).clone();
         }
         
-        flagOut.accept(PAYLOAD_OBJECT);
+        flagOut.accept(RsRpcProtocol.PAYLOAD_OBJECT);
         
         ByteArrayOutputStream bout = new ByteArrayOutputStream();
         
@@ -272,62 +197,24 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
 
     @Override
     public void onError(long streamId, String reason) {
-        if (logMessages) {
-            System.out.printf("%s/onError/%d/%s%n", server ? "server" : "client", streamId, reason);
-        }
-        if (streamId > 0) {
-            Object local = streams.get(streamId);
-            if (local instanceof Subscriber) {
-                Subscriber<?> s = (Subscriber<?>) local;
-                
-                s.onError(new Exception(reason));
-                return;
-            }
-        }
-        if (streamId < 0) {
-            if (terminateOnce.compareAndSet(false, true)) {
-                onTerminate.run();
-            }
-            if (closed) {
-                return;
-            }
-        }
-        UnsignalledExceptions.onErrorDropped(new Exception(reason));
+        receive.onError(streamId, reason);
     }
 
     @Override
     public void onComplete(long streamId) {
-        if (logMessages) {
-            System.out.printf("%s/onComplete/%d%n", server ? "server" : "client", streamId);
-        }
-        Object local = streams.get(streamId);
-        if (local instanceof Subscriber) {
-            Subscriber<?> s = (Subscriber<?>) local;
-            
-            s.onComplete();
-            return;
-        }
+        receive.onComplete(streamId);
     }
 
     @Override
     public void onRequested(long streamId, long requested) {
-        if (logMessages) {
-            System.out.printf("%s/onRequested/%d/%d%n", server ? "server" : "client", streamId, requested);
-        }
-        Object remote = streams.get(streamId);
-        if (remote instanceof Subscription) {
-            Subscription s = (Subscription) remote;
-            
-            s.request(requested);
-            return;
-        }
+        receive.onRequested(streamId, requested);
     }
 
     @Override
     public void onUnknown(int type, int flags, long streamId, byte[] payload, int read) {
-        if (logMessages) {
-            System.out.printf("%s/onUnknown/%d/len=%d/%d%n", server ? "server" : "client", streamId, payload.length, read);
-        }
+//        if (logMessages) {
+//            System.out.printf("%s/onUnknown/%d/len=%d/%d%n", server ? "server" : "client", streamId, payload.length, read);
+//        }
         // TODO Auto-generated method stub
         
     }
@@ -340,19 +227,18 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
         }
     }
     
+    @Override
     public void sendNew(long streamId, String function) {
         writer.schedule(() -> {
-            if (logMessages) {
-                System.out.printf("%s/sendNew/%d/%s%n", server ? "server" : "client", streamId, function);
-            }
             RsRpcProtocol.open(out, streamId, function, writeBuffer);
             flush(out);
         });
     }
     
+    @Override
     public void sendNext(long streamId, Object o) throws IOException {
         
-        OnNextTask task = new OnNextTask(streamId, out, writeBuffer, server, logMessages ? o : null);
+        OnNextTask task = new OnNextTask(streamId, out, writeBuffer, server, null);
         
         task.payload = encode(o, task);
         
@@ -378,9 +264,6 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
         
         @Override
         public void run() {
-            if (logMessages) {
-                System.out.printf("%s/sendNext/%d/%s%n", server ? "server" : "client", streamId, object);
-            }
             RsRpcProtocol.next(out, streamId, flags, payload, writeBuffer);
             flush(out);
         }
@@ -391,51 +274,40 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive {
         }
     }
 
+    @Override
     public void sendError(long streamId, Throwable e) {
         writer.schedule(() -> {
-            if (logMessages) {
-                e.printStackTrace();
-                System.out.printf("%s/sendError/%d/%s%n", server ? "server" : "client", streamId, e);
-            }
             RsRpcProtocol.error(out, streamId, e, writeBuffer);
             flush(out);
         });
     }
     
+    @Override
     public void sendComplete(long streamId) {
         writer.schedule(() -> {
-            if (logMessages) {
-                System.out.printf("%s/sendComplete/%d%n", server ? "server" : "client", streamId);
-            }
             RsRpcProtocol.complete(out, streamId, writeBuffer);
             flush(out);
         });
     }
     
+    @Override
     public void sendCancel(long streamId, String reason) {
         writer.schedule(() -> {
-            if (logMessages) {
-                System.out.printf("%s/sendCancel/%d/%s%n", server ? "server" : "client", streamId, reason);
-            }
             RsRpcProtocol.cancel(out, streamId, reason, writeBuffer);
             flush(out);
         });
     }
 
+    @Override
     public void sendRequested(long streamId, long requested) {
         writer.schedule(() -> {
-            if (logMessages) {
-                System.out.printf("%s/sendRequested/%d/%d%n", server ? "server" : "client", streamId, requested);
-            }
             RsRpcProtocol.request(out, streamId, requested, writeBuffer);
             flush(out);
         });
     }
-
-    public void deregister(long streamId) {
-        if (streams.remove(streamId) == null) {
-            // TODO
-        }
+    
+    @Override
+    public boolean isClosed() {
+        return closed;
     }
-
 }

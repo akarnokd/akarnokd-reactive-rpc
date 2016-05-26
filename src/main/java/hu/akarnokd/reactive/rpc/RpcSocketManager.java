@@ -6,6 +6,7 @@ import java.net.*;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import hu.akarnokd.reactive.pc.RsAPIManager;
 import rsc.flow.Cancellation;
 import rsc.scheduler.*;
 import rsc.util.UnsignalledExceptions;
@@ -35,7 +36,8 @@ enum RpcSocketManager {
         Map<String, Object> clientMap;
         Map<String, Object> serverMap;
 
-        RpcIOManager[] io = { null };
+
+        RsAPIManager[] am = { null };
         T api;
         RpcStreamContextImpl<T> ctx;
         
@@ -58,19 +60,21 @@ enum RpcSocketManager {
                     if (action == null) {
                         throw new IllegalArgumentException("The method '" + m.getName() + "' is not a proper RsRpc method");
                     }
-                    return RpcServiceMapper.dispatchClient(name, action, args, io[0]);
+                    return RpcServiceMapper.dispatchClient(name, action, args, am[0]);
                 }
             ));
         } else {
             api = null;
         }
 
+        RpcIOManager rpcIo;
+        
         ctx = new RpcStreamContextImpl<>(endpoint, port, api, scheduler);
 
         if (localAPI != null) {
             serverMap = RpcServiceMapper.serverServiceMap(localAPI);
             
-            io[0] = new RpcIOManager(reader, in, writer, out, (streamId, function, iom) -> {
+            RsAPIManager apiMgr = new RsAPIManager(server, (streamId, function, iom) -> {
                 Object action = serverMap.get(function);
                 if (action == null) {
                     UnsignalledExceptions.onErrorDropped(new IllegalStateException("Function " + function + " not found"));
@@ -80,20 +84,27 @@ enum RpcSocketManager {
             }, 
             () -> {
                 RpcServiceMapper.invokeDone(localAPI, ctx);
-            },
-            server);
+            });
             
+            rpcIo = new RpcIOManager(reader, in, writer, out, apiMgr, server);
+            apiMgr.setSend(rpcIo);
+            
+            am[0] = apiMgr;
             reader.schedule(() -> { RpcServiceMapper.invokeInit(localAPI, ctx); });
         } else {
-            io[0] = new RpcIOManager(reader, in, writer, out, (streamId, function, iom) -> false, () -> {
-                
-            }, server);
+            RsAPIManager apiMgr = new RsAPIManager(server, (streamId, function, iom) -> false, 
+            () -> { });
+            
+            rpcIo = new RpcIOManager(reader, in, writer, out, apiMgr, server);
+            apiMgr.setSend(rpcIo);
+            
+            am[0] = apiMgr;
         }
         
-        io[0].start();
+        rpcIo.start();
         
         close.accept(() -> {
-            io[0].close();
+            rpcIo.close();
             
             try {
                 socket.close();

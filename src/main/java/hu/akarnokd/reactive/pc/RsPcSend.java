@@ -1,9 +1,8 @@
-package hu.akarnokd.reactive.ipc;
+package hu.akarnokd.reactive.pc;
 
 import java.io.IOException;
 
-public interface IpcSend {
-    
+public interface RsPcSend {
     void sendNew(long streamId, String function);
     
     void sendCancel(long streamId, String reason);
@@ -15,4 +14,6 @@ public interface IpcSend {
     void sendComplete(long streamId);
     
     void sendRequested(long streamId, long n);
+    
+    boolean isClosed();
 }

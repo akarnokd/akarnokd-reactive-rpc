@@ -14,7 +14,7 @@ import rsc.scheduler.ImmediateScheduler;
 
 public class BasicPingPongTest {
 
-    interface PingPongClientAPI {
+    public interface PingPongClientAPI {
         
         @RsRpc
         Integer pong2(Integer ping);
@@ -47,7 +47,7 @@ public class BasicPingPongTest {
         Integer map3(Integer v1, Integer v2);
     }
     
-    static class PingPongServerAPI {
+    public static class PingPongServerAPI {
         
         @RsRpc
         public void send3(RpcStreamContext<Void> ctx, Integer v1, Integer v2) {
@@ -56,26 +56,31 @@ public class BasicPingPongTest {
         
         @RsRpc
         public Integer receive3(RpcStreamContext<Void> ctx) {
+            System.out.println("Server: receive3()");
             return 33;
         }
         
         @RsRpc
         public Integer map3(RpcStreamContext<Void> ctx, Integer v1, Integer v2) {
+            System.out.println("Server: map3()");
             return v1 + v2;
         }
 
         @RsRpc
         public Publisher<Integer> pong2(RpcStreamContext<Void> ctx, Publisher<Integer> ping) {
+            System.out.println("Server: pong2()");
             return Px.wrap(ping).map(v -> v + 1);
         }
 
         @RsRpc
         public Publisher<Integer> pong(RpcStreamContext<Void> ctx, Publisher<Integer> ping) {
+            System.out.println("Server: pong()");
             return Px.wrap(ping).map(v -> v + 1);
         }
 
         @RsRpc
         public void send(RpcStreamContext<Void> ctx, Publisher<Integer> values) {
+            System.out.println("Server: send()");
             Px.wrap(values).subscribe(v -> {
                 System.out.println("Server: " + v);
             }, Throwable::printStackTrace);
@@ -87,6 +92,7 @@ public class BasicPingPongTest {
         }
         @RsRpc
         public Publisher<Integer> receive(RpcStreamContext<Void> ctx) {
+            System.out.println("Server: receive()");
             return Px.range(1, 1000);
         }
 
@@ -96,6 +102,7 @@ public class BasicPingPongTest {
         }
         @RsRpc
         public Publisher<Integer> umap(RpcStreamContext<Void> ctx, Publisher<Integer> values) {
+            System.out.println("Server: umap()");
             Px.wrap(values).subscribe(v -> {
                 System.out.println("Server: " + v);
             }, Throwable::printStackTrace);
@@ -166,12 +173,12 @@ public class BasicPingPongTest {
         
     }
     
-    interface StreamPerfClientAPI {
+    public interface StreamPerfClientAPI {
         @RsRpc
         Publisher<Integer> range(Publisher<Integer> count);
     }
     
-    static final class StreamPerfServerAPI {
+    public static final class StreamPerfServerAPI {
         @RsRpc
         public Publisher<Integer> range(RpcStreamContext<?> ctx, Publisher<Integer> count) {
 //            System.out.println("Server: range");

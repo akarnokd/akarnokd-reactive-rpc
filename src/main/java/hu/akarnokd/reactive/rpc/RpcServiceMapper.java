@@ -8,6 +8,7 @@ import java.util.function.Function;
 
 import org.reactivestreams.*;
 
+import hu.akarnokd.reactive.pc.RsAPIManager;
 import rsc.publisher.Px;
 import rsc.subscriber.BlockingLastSubscriber;
 import rsc.util.*;
@@ -202,7 +203,7 @@ enum RpcServiceMapper {
         return result;
     }
     
-    public static boolean dispatchServer(long streamId, Object action, RpcIOManager io, RpcStreamContext<?> ctx) {
+    public static boolean dispatchServer(long streamId, Object action, RsAPIManager io, RpcStreamContext<?> ctx) {
         if (action instanceof RpcServerSend) {
             RpcServerSend rpcServerSend = (RpcServerSend) action;
             return rpcServerSend.send(streamId, ctx, io);
@@ -231,7 +232,7 @@ enum RpcServiceMapper {
         return false;
     }
     
-    public static Object dispatchClient(String name, Object action, Object[] args, RpcIOManager io) {
+    public static Object dispatchClient(String name, Object action, Object[] args, RsAPIManager io) {
         if (action instanceof RpcClientSend) {
             if (args[0] == null) {
                 throw new NullPointerException("The source Publisher is null");
@@ -280,7 +281,7 @@ enum RpcServiceMapper {
     
     static final class RpcClientSyncSend {
         
-        public void send(String function, Object[] args, RpcIOManager io) {
+        public void send(String function, Object[] args, RsAPIManager io) {
             if (args.length == 1) {
                 RpcClientSend.sendStatic(function, Px.just(args[0]), io);
             } else {
@@ -291,7 +292,7 @@ enum RpcServiceMapper {
     
     static final class RpcClientSend {
 
-        public static void sendStatic(String function, Publisher<?> values, RpcIOManager io) {
+        public static void sendStatic(String function, Publisher<?> values, RsAPIManager io) {
             long streamId = io.newStreamId();
             
             SendSubscriber s = new SendSubscriber(io, streamId);
@@ -301,7 +302,7 @@ enum RpcServiceMapper {
             values.subscribe(s);
         }
 
-        public void send(String function, Publisher<?> values, RpcIOManager io) {
+        public void send(String function, Publisher<?> values, RsAPIManager io) {
             sendStatic(function, values, io);
         }
         
@@ -309,13 +310,13 @@ enum RpcServiceMapper {
         extends DeferredSubscription
         implements Subscriber<Object> {
             
-            final RpcIOManager io;
+            final RsAPIManager io;
             
             final long streamId;
             
             boolean done;
             
-            public SendSubscriber(RpcIOManager io, long streamId) {
+            public SendSubscriber(RsAPIManager io, long streamId) {
                 this.io = io;
                 this.streamId = streamId;
             }
@@ -362,7 +363,7 @@ enum RpcServiceMapper {
     }
     
     static final class RpcClientSyncReceive {
-        public Object receive(String function, RpcIOManager io) {
+        public Object receive(String function, RsAPIManager io) {
             Publisher<?> p = RpcClientReceive.receiveStatic(function, io);
             
             BlockingLastSubscriber<Object> subscriber = new BlockingLastSubscriber<>();
@@ -376,9 +377,9 @@ enum RpcServiceMapper {
         static final class RpcReceiveSubscription implements Subscription {
             final long streamId;
             
-            final RpcIOManager io;
+            final RsAPIManager io;
             
-            public RpcReceiveSubscription(long streamId, RpcIOManager io) {
+            public RpcReceiveSubscription(long streamId, RsAPIManager io) {
                 this.streamId = streamId;
                 this.io = io;
             }
@@ -397,7 +398,7 @@ enum RpcServiceMapper {
             }
         }
 
-        public static Publisher<?> receiveStatic(String function, RpcIOManager io) {
+        public static Publisher<?> receiveStatic(String function, RsAPIManager io) {
             return s -> {
                 long streamId = io.newStreamId();
                 io.registerSubscriber(streamId, s);
@@ -407,14 +408,14 @@ enum RpcServiceMapper {
             };
         }
         
-        public Publisher<?> receive(String function, RpcIOManager io) {
+        public Publisher<?> receive(String function, RsAPIManager io) {
             return receiveStatic(function, io);
         }
         
     }
     
     static final class RpcClientSyncMap {
-        public Object map(String function, Object[] args, RpcIOManager io) {
+        public Object map(String function, Object[] args, RsAPIManager io) {
             Publisher<?> p; 
             
             if (args.length == 1) {
@@ -431,7 +432,7 @@ enum RpcServiceMapper {
     
     static final class RpcClientMap {
         
-        public static Publisher<?> mapStatic(String function, Publisher<?> values, RpcIOManager io) {
+        public static Publisher<?> mapStatic(String function, Publisher<?> values, RsAPIManager io) {
             return s -> {
                 long streamId = io.newStreamId();
                 
@@ -443,6 +444,7 @@ enum RpcServiceMapper {
                 receiver.sender = sender;
                 
                 io.registerSubscriber(streamId, receiver);
+                io.registerSubscription(streamId, sender);
                 io.sendNew(streamId, function);
                 
                 s.onSubscribe(receiver.s);
@@ -451,7 +453,7 @@ enum RpcServiceMapper {
             };
         }
         
-        public Publisher<?> map(String function, Publisher<?> values, RpcIOManager io) {
+        public Publisher<?> map(String function, Publisher<?> values, RsAPIManager io) {
             return mapStatic(function, values, io);
         }
         
@@ -461,11 +463,11 @@ enum RpcServiceMapper {
             
             final AtomicInteger open;
             
-            final RpcIOManager io;
+            final RsAPIManager io;
             
             boolean done;
             
-            public RpcMapSubscriber(long streamId, AtomicInteger open, RpcIOManager io) {
+            public RpcMapSubscriber(long streamId, AtomicInteger open, RsAPIManager io) {
                 this.streamId = streamId;
                 this.open = open;
                 this.io = io;
@@ -522,13 +524,13 @@ enum RpcServiceMapper {
             
             final AtomicInteger open;
             
-            final RpcIOManager io;
+            final RsAPIManager io;
 
             Subscription s;
 
             RpcMapSubscriber sender;
             
-            public RpcMapReceiverSubscriber(Subscriber<Object> actual, long streamId, AtomicInteger open, RpcIOManager io) {
+            public RpcMapReceiverSubscriber(Subscriber<Object> actual, long streamId, AtomicInteger open, RsAPIManager io) {
                 this.actual = actual;
                 this.streamId = streamId;
                 this.open = open;
@@ -599,7 +601,7 @@ enum RpcServiceMapper {
     }
     
     static final class RpcClientUmap {
-        public void umap(String function, Function<Publisher<?>, Publisher<?>> mapper, RpcIOManager io) {
+        public void umap(String function, Function<Publisher<?>, Publisher<?>> mapper, RsAPIManager io) {
 
             long streamId = io.newStreamId();
             
@@ -610,6 +612,7 @@ enum RpcServiceMapper {
             receiver.provider = new RpcUmapProvider(streamId, io, onceInner);
             
             io.registerSubscriber(streamId, receiver);
+            io.registerSubscription(streamId, receiver);
             
             io.sendNew(streamId, function);
 
@@ -645,7 +648,7 @@ enum RpcServiceMapper {
         static final class RpcUmapReceiver implements Subscriber<Object>, Subscription {
             final long streamId;
             
-            final RpcIOManager io;
+            final RsAPIManager io;
             
             final AtomicBoolean once;
             
@@ -655,7 +658,7 @@ enum RpcServiceMapper {
             
             Subscription s;
             
-            public RpcUmapReceiver(long streamId, RpcIOManager io, AtomicBoolean once) {
+            public RpcUmapReceiver(long streamId, RsAPIManager io, AtomicBoolean once) {
                 this.streamId = streamId;
                 this.io = io;
                 this.once = once;
@@ -712,13 +715,13 @@ enum RpcServiceMapper {
         static final class RpcUmapProvider extends DeferredSubscription implements Subscriber<Object> {
             final long streamId;
             
-            final RpcIOManager io;
+            final RsAPIManager io;
             
             final AtomicBoolean once;
             
             boolean done;
             
-            public RpcUmapProvider(long streamId, RpcIOManager io, AtomicBoolean once) {
+            public RpcUmapProvider(long streamId, RsAPIManager io, AtomicBoolean once) {
                 this.streamId = streamId;
                 this.io = io;
                 this.once = once;
@@ -782,9 +785,9 @@ enum RpcServiceMapper {
             this.instance = instance;
         }
         
-        public boolean send(long streamId, RpcStreamContext<?> ctx, RpcIOManager io) {
+        public boolean send(long streamId, RpcStreamContext<?> ctx, RsAPIManager io) {
             RpcServerSend.ServerSendSubscriber parent = new RpcServerSend.ServerSendSubscriber(streamId, io);
-            io.registerSubscriber(streamId, parent);
+            io.registerSubscription(streamId, parent);
             
             Px.fromCallable(() -> {
                 return m.invoke(instance, ctx);
@@ -805,7 +808,7 @@ enum RpcServiceMapper {
             this.instance = instance;
         }
         
-        public boolean send(long streamId, RpcStreamContext<?> ctx, RpcIOManager io) {
+        public boolean send(long streamId, RpcStreamContext<?> ctx, RsAPIManager io) {
             Publisher<?> output;
             try {
                 output = (Publisher<?>)m.invoke(instance, ctx);
@@ -822,7 +825,7 @@ enum RpcServiceMapper {
             }
 
             ServerSendSubscriber parent = new ServerSendSubscriber(streamId, io);
-            io.registerSubscriber(streamId, parent);
+            io.registerSubscription(streamId, parent);
             
             output.subscribe(parent);
             
@@ -833,11 +836,11 @@ enum RpcServiceMapper {
         extends DeferredSubscription implements Subscriber<Object> {
             final long streamId;
             
-            final RpcIOManager io;
+            final RsAPIManager io;
             
             boolean done;
             
-            public ServerSendSubscriber(long streamId, RpcIOManager io) {
+            public ServerSendSubscriber(long streamId, RsAPIManager io) {
                 this.streamId = streamId;
                 this.io = io;
             }
@@ -893,7 +896,7 @@ enum RpcServiceMapper {
             this.instance = instance;
         }
         
-        public boolean receive(long streamId, RpcStreamContext<?> ctx, RpcIOManager io) {
+        public boolean receive(long streamId, RpcStreamContext<?> ctx, RsAPIManager io) {
             RpcServerReceive.ServerReceiveSubscriber parent = new RpcServerReceive.ServerReceiveSubscriber(streamId, io);
             
             Publisher<?> p = s -> {
@@ -948,7 +951,7 @@ enum RpcServiceMapper {
             this.instance = instance;
         }
         
-        public boolean receive(long streamId, RpcStreamContext<?> ctx, RpcIOManager io) {
+        public boolean receive(long streamId, RpcStreamContext<?> ctx, RsAPIManager io) {
             
             ServerReceiveSubscriber parent = new ServerReceiveSubscriber(streamId, io);
             
@@ -976,11 +979,11 @@ enum RpcServiceMapper {
         static final class ServerReceiveSubscriber implements Subscriber<Object>, Subscription {
             final long streamId;
             
-            final RpcIOManager io;
+            final RsAPIManager io;
             
             Subscriber<Object> actual;
 
-            public ServerReceiveSubscriber(long streamId, RpcIOManager io) {
+            public ServerReceiveSubscriber(long streamId, RsAPIManager io) {
                 this.streamId = streamId;
                 this.io = io;
             }
@@ -1032,7 +1035,7 @@ enum RpcServiceMapper {
             this.instance = instance;
         }
         
-        public boolean map(long streamId, RpcStreamContext<?> ctx, RpcIOManager io) {
+        public boolean map(long streamId, RpcStreamContext<?> ctx, RsAPIManager io) {
             AtomicInteger innerOnce = new AtomicInteger(2);
 
             RpcServerMap.ServerMapSubscriber parent = new RpcServerMap.ServerMapSubscriber(streamId, io, innerOnce);
@@ -1040,6 +1043,7 @@ enum RpcServiceMapper {
             parent.sender = sender;
 
             io.registerSubscriber(streamId, parent);
+            io.registerSubscription(streamId, sender);
 
             AtomicBoolean once = new AtomicBoolean();
             
@@ -1071,7 +1075,7 @@ enum RpcServiceMapper {
             this.instance = instance;
         }
         
-        public boolean map(long streamId, RpcStreamContext<?> ctx, RpcIOManager io) {
+        public boolean map(long streamId, RpcStreamContext<?> ctx, RsAPIManager io) {
             AtomicInteger innerOnce = new AtomicInteger(2);
 
             ServerMapSubscriber parent = new ServerMapSubscriber(streamId, io, innerOnce);
@@ -1079,6 +1083,7 @@ enum RpcServiceMapper {
             parent.sender = sender;
 
             io.registerSubscriber(streamId, parent);
+            io.registerSubscription(streamId, sender);
 
             AtomicBoolean once = new AtomicBoolean();
             
@@ -1112,7 +1117,7 @@ enum RpcServiceMapper {
         static final class ServerMapSubscriber implements Subscriber<Object>, Subscription {
             final long streamId;
             
-            final RpcIOManager io;
+            final RsAPIManager io;
             
             final AtomicInteger once;
             
@@ -1122,7 +1127,7 @@ enum RpcServiceMapper {
             
             ServerSendSubscriber sender;
 
-            public ServerMapSubscriber(long streamId, RpcIOManager io, AtomicInteger once) {
+            public ServerMapSubscriber(long streamId, RsAPIManager io, AtomicInteger once) {
                 this.streamId = streamId;
                 this.io = io;
                 this.once = once;
@@ -1195,13 +1200,13 @@ enum RpcServiceMapper {
         extends DeferredSubscription implements Subscriber<Object> {
             final long streamId;
             
-            final RpcIOManager io;
+            final RsAPIManager io;
             
             final AtomicInteger once;
             
             boolean done;
             
-            public ServerSendSubscriber(long streamId, RpcIOManager io, AtomicInteger once) {
+            public ServerSendSubscriber(long streamId, RsAPIManager io, AtomicInteger once) {
                 this.streamId = streamId;
                 this.io = io;
                 this.once = once;

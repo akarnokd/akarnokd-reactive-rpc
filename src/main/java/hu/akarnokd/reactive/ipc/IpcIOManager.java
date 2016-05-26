@@ -4,11 +4,12 @@ import java.io.*;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
+import hu.akarnokd.reactive.pc.*;
 import rsc.scheduler.Scheduler;
 import rsc.scheduler.Scheduler.Worker;
 import rsc.util.UnsignalledExceptions;
 
-public final class IpcIOManager implements Closeable, IpcSend {
+public final class IpcIOManager implements Closeable, RsPcSend {
 
     IpcFileInterop input;
     
@@ -47,7 +48,7 @@ public final class IpcIOManager implements Closeable, IpcSend {
 
     final String fileNameBase;
 
-    final IpcReceive receive;
+    final RsPcReceive receive;
     
     final int size = 16 * 1024;
     
@@ -58,7 +59,7 @@ public final class IpcIOManager implements Closeable, IpcSend {
     static final byte[] EMPTY = new byte[0];
     
     public IpcIOManager(Scheduler scheduler, Socket socket, String fileNameBase, 
-            int maxSize, IpcReceive receive, boolean server) throws IOException {
+            int maxSize, RsPcReceive receive, boolean server) throws IOException {
         
         this.fileNameBase = fileNameBase;
         
@@ -117,7 +118,7 @@ public final class IpcIOManager implements Closeable, IpcSend {
         int idx = readIndex;
         IpcFileInterop inp = input;
         IpcFileInterop wip = this.wip;
-        IpcReceive receive = this.receive;
+        RsPcReceive receive = this.receive;
         
         int wipOffset = server ? CLIENT_TO_SERVER_WIP : SERVER_TO_CLIENT_WIP;
         
@@ -175,14 +176,14 @@ public final class IpcIOManager implements Closeable, IpcSend {
         output.close();
     }
 
-    boolean dispatch(IpcFileInterop inp, int offset, int len, IpcReceive receive) {
+    boolean dispatch(IpcFileInterop inp, int offset, int len, RsPcReceive receive) {
         int typeAndFlags = inp.getInt(offset + 4);
         byte type = (byte)(typeAndFlags & 0xFF);
         int flags = typeAndFlags >> 8;
         long streamId = inp.getLong(offset + 8);
         
         switch (type) {
-        case IpcReceive.TYPE_NEW: {
+        case RsIpcProtocol.TYPE_NEW: {
             if (len > 16) {
                 receive.onNew(streamId, readUtf8(inp, offset + 16, offset + len));
             } else {
@@ -190,21 +191,21 @@ public final class IpcIOManager implements Closeable, IpcSend {
             }
             return false;
         }
-        case IpcReceive.TYPE_NEXT: {
+        case RsIpcProtocol.TYPE_NEXT: {
             switch (flags) {
-            case IpcReceive.PAYLOAD_INT: {
+            case RsIpcProtocol.PAYLOAD_INT: {
                 receive.onNext(streamId, inp.getInt(offset + 16));
                 break;
             }
-            case IpcReceive.PAYLOAD_LONG: {
+            case RsIpcProtocol.PAYLOAD_LONG: {
                 receive.onNext(streamId, inp.getLong(offset + 16));
                 break;
             }
-            case IpcReceive.PAYLOAD_STRING: {
+            case RsIpcProtocol.PAYLOAD_STRING: {
                 receive.onNext(streamId, readUtf8(inp, offset + 16, offset + len));
                 break;
             }
-            case IpcReceive.PAYLOAD_BYTES: {
+            case RsIpcProtocol.PAYLOAD_BYTES: {
                 byte[] bytes = new byte[len - 16];
                 inp.get(offset + 16, bytes);
                 receive.onNext(streamId, bytes);
@@ -224,7 +225,7 @@ public final class IpcIOManager implements Closeable, IpcSend {
             }
             return false;
         }
-        case IpcReceive.TYPE_ERROR: {
+        case RsIpcProtocol.TYPE_ERROR: {
             if (len > 16) {
                 receive.onError(streamId, readUtf8(inp, offset + 16, offset + len));
             } else {
@@ -232,11 +233,11 @@ public final class IpcIOManager implements Closeable, IpcSend {
             }
             return false;
         }
-        case IpcReceive.TYPE_COMPLETE: {
+        case RsIpcProtocol.TYPE_COMPLETE: {
             receive.onComplete(streamId);
             return false;
         }
-        case IpcReceive.TYPE_CANCEL: {
+        case RsIpcProtocol.TYPE_CANCEL: {
             if (len > 16) {
                 receive.onCancel(streamId, readUtf8(inp, offset + 16, offset + len));
             } else {
@@ -244,7 +245,7 @@ public final class IpcIOManager implements Closeable, IpcSend {
             }
             return false;
         }
-        case IpcReceive.TYPE_REQUEST: {
+        case RsIpcProtocol.TYPE_REQUEST: {
             
             long r;
             
@@ -256,7 +257,7 @@ public final class IpcIOManager implements Closeable, IpcSend {
             receive.onRequested(streamId, r);
             return false;
         }
-        case IpcReceive.TYPE_SWITCH: {
+        case RsIpcProtocol.TYPE_SWITCH: {
             
             try {
                 inp.closeFile();
@@ -369,7 +370,7 @@ public final class IpcIOManager implements Closeable, IpcSend {
                     output = new IpcFileInterop(fileNameBase + "-server-" + (idx) + ".dat", size);
                 }
                 this.writeIndex = 0;
-                outp.setInt(writeIndex + 4, (idx << 8) | IpcReceive.TYPE_SWITCH);
+                outp.setInt(writeIndex + 4, (idx << 8) | RsIpcProtocol.TYPE_SWITCH);
                 outp.setLong(writeIndex + 8, 0L);
                 outp.setIntVolatile(writeIndex, 16);
                 outp.closeFile();
@@ -398,7 +399,7 @@ public final class IpcIOManager implements Closeable, IpcSend {
                 outp = output;
             }
             
-            outp.setInt(wi + 4, IpcReceive.TYPE_NEW);
+            outp.setInt(wi + 4, RsIpcProtocol.TYPE_NEW);
             outp.setLong(wi + 8, streamId);
             if (n != 0) {
                 outp.set(wi + 16, b);
@@ -426,7 +427,7 @@ public final class IpcIOManager implements Closeable, IpcSend {
                 outp = output;
             }
             
-            outp.setInt(wi + 4, IpcReceive.TYPE_CANCEL);
+            outp.setInt(wi + 4, RsIpcProtocol.TYPE_CANCEL);
             outp.setLong(wi + 8, streamId);
             if (n != 0) {
                 outp.set(wi + 16, b);
@@ -467,8 +468,8 @@ public final class IpcIOManager implements Closeable, IpcSend {
                 outp = output;
             }
             
-            outp.setInt(wi + 4, IpcReceive.TYPE_NEXT);
-            outp.setLong(wi + 8, streamId | (IpcReceive.PAYLOAD_INT << 8));
+            outp.setInt(wi + 4, RsIpcProtocol.TYPE_NEXT);
+            outp.setLong(wi + 8, streamId | (RsIpcProtocol.PAYLOAD_INT << 8));
             outp.setInt(wi + 16, value);
             outp.setIntVolatile(wi, n + 16);
             
@@ -488,8 +489,8 @@ public final class IpcIOManager implements Closeable, IpcSend {
                 outp = output;
             }
             
-            outp.setInt(wi + 4, IpcReceive.TYPE_NEXT);
-            outp.setLong(wi + 8, streamId | (IpcReceive.PAYLOAD_LONG << 8));
+            outp.setInt(wi + 4, RsIpcProtocol.TYPE_NEXT);
+            outp.setLong(wi + 8, streamId | (RsIpcProtocol.PAYLOAD_LONG << 8));
             outp.setLong(wi + 16, value);
             outp.setIntVolatile(wi, n + 16);
             
@@ -519,8 +520,8 @@ public final class IpcIOManager implements Closeable, IpcSend {
                 outp = output;
             }
             
-            outp.setInt(wi + 4, IpcReceive.TYPE_NEXT);
-            outp.setLong(wi + 8, streamId | (IpcReceive.PAYLOAD_STRING << 8));
+            outp.setInt(wi + 4, RsIpcProtocol.TYPE_NEXT);
+            outp.setLong(wi + 8, streamId | (RsIpcProtocol.PAYLOAD_STRING << 8));
             if (n != 0) {
                 outp.set(wi + 16, b);
             }
@@ -545,8 +546,8 @@ public final class IpcIOManager implements Closeable, IpcSend {
                 outp = output;
             }
             
-            outp.setInt(wi + 4, IpcReceive.TYPE_NEXT);
-            outp.setLong(wi + 8, streamId | (IpcReceive.PAYLOAD_BYTES << 8));
+            outp.setInt(wi + 4, RsIpcProtocol.TYPE_NEXT);
+            outp.setLong(wi + 8, streamId | (RsIpcProtocol.PAYLOAD_BYTES << 8));
             if (n != 0) {
                 outp.set(wi + 16, value);
             }
@@ -576,8 +577,8 @@ public final class IpcIOManager implements Closeable, IpcSend {
                 outp = output;
             }
             
-            outp.setInt(wi + 4, IpcReceive.TYPE_NEXT);
-            outp.setLong(wi + 8, streamId | (IpcReceive.PAYLOAD_OBJECT << 8));
+            outp.setInt(wi + 4, RsIpcProtocol.TYPE_NEXT);
+            outp.setLong(wi + 8, streamId | (RsIpcProtocol.PAYLOAD_OBJECT << 8));
             if (n != 0) {
                 outp.set(wi + 16, b);
             }
@@ -610,7 +611,7 @@ public final class IpcIOManager implements Closeable, IpcSend {
                 outp = output;
             }
             
-            outp.setInt(wi + 4, IpcReceive.TYPE_ERROR);
+            outp.setInt(wi + 4, RsIpcProtocol.TYPE_ERROR);
             outp.setLong(wi + 8, streamId);
             if (n != 0) {
                 outp.set(wi + 16, b);
@@ -632,7 +633,7 @@ public final class IpcIOManager implements Closeable, IpcSend {
                 outp = output;
             }
             
-            outp.setInt(wi + 4, IpcReceive.TYPE_COMPLETE);
+            outp.setInt(wi + 4, RsIpcProtocol.TYPE_COMPLETE);
             outp.setLong(wi + 8, streamId);
             outp.setIntVolatile(wi, 16);
             
@@ -653,10 +654,13 @@ public final class IpcIOManager implements Closeable, IpcSend {
                 outp = output;
             }
             
-            outp.setInt(wi + 4, IpcReceive.TYPE_REQUEST | (((int)r) << 8));
-            outp.setLong(wi + 8, streamId);
             if (n != 0) {
+                outp.setInt(wi + 4, RsIpcProtocol.TYPE_REQUEST);
+                outp.setLong(wi + 8, streamId);
                 outp.setLong(wi + 16, r);
+            } else {
+                outp.setInt(wi + 4, RsIpcProtocol.TYPE_REQUEST | (((int)r) << 8));
+                outp.setLong(wi + 8, streamId);
             }
             outp.setIntVolatile(wi, n + 16);
             
@@ -686,5 +690,10 @@ public final class IpcIOManager implements Closeable, IpcSend {
                 UnsignalledExceptions.onErrorDropped(ex);
             }
         }
+    }
+    
+    @Override
+    public boolean isClosed() {
+        return closed;
     }
 }

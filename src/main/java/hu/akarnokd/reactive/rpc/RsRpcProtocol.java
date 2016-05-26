@@ -41,6 +41,13 @@ enum RsRpcProtocol {
      * negative amounts indicate unbounded mode. Zero is ignored in both cases.*/
     public static final int TYPE_REQUEST = 6;
 
+    public static final byte PAYLOAD_OBJECT = 0;
+    public static final byte PAYLOAD_INT = 1;
+    public static final byte PAYLOAD_LONG = 2;
+    public static final byte PAYLOAD_STRING = 3;
+    public static final byte PAYLOAD_BYTES = 4;
+
+    
     public interface RsRpcReceive {
         void onNew(long streamId, String function);
         
