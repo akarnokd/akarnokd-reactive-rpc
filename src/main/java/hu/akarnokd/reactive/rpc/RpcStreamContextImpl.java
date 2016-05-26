@@ -1,4 +1,4 @@
-package hu.akarnokd.reactiverpc;
+package hu.akarnokd.reactive.rpc;
 
 import java.net.InetAddress;
 import java.util.concurrent.*;
