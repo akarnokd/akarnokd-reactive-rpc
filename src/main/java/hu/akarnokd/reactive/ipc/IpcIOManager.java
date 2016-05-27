@@ -406,6 +406,10 @@ public final class IpcIOManager implements Closeable, RsPcSend {
             }
             outp.setIntVolatile(wi, n + 16);
             
+            int m = n & 3;
+            if (m != 0) {
+                n += 4 - m;
+            }
             writeIndex = wi + n + 16;
             incrementWip();
         });
@@ -434,6 +438,10 @@ public final class IpcIOManager implements Closeable, RsPcSend {
             }
             outp.setIntVolatile(wi, n + 16);
             
+            int m = n & 3;
+            if (m != 0) {
+                n += 4 - m;
+            }
             writeIndex = wi + n + 16;
             incrementWip();
         });
@@ -527,6 +535,10 @@ public final class IpcIOManager implements Closeable, RsPcSend {
             }
             outp.setIntVolatile(wi, n + 16);
             
+            int m = n & 3;
+            if (m != 0) {
+                n += 4 - m;
+            }
             writeIndex = wi + n + 16;
             incrementWip();
         });
@@ -553,6 +565,10 @@ public final class IpcIOManager implements Closeable, RsPcSend {
             }
             outp.setIntVolatile(wi, n + 16);
             
+            int m = n & 3;
+            if (m != 0) {
+                n += 4 - m;
+            }
             writeIndex = wi + n + 16;
             incrementWip();
         });
@@ -584,6 +600,10 @@ public final class IpcIOManager implements Closeable, RsPcSend {
             }
             outp.setIntVolatile(wi, n + 16);
             
+            int m = n & 3;
+            if (m != 0) {
+                n += 4 - m;
+            }
             writeIndex = wi + n + 16;
             incrementWip();
         });
@@ -617,6 +637,11 @@ public final class IpcIOManager implements Closeable, RsPcSend {
                 outp.set(wi + 16, b);
             }
             outp.setIntVolatile(wi, n + 16);
+
+            int m = n & 3;
+            if (m != 0) {
+                n += 4 - m;
+            }
             
             writeIndex = wi + n + 16;
             incrementWip();
