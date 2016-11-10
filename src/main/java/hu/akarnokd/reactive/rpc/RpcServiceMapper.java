@@ -9,9 +9,10 @@ import java.util.function.Function;
 import org.reactivestreams.*;
 
 import hu.akarnokd.reactive.pc.RsAPIManager;
-import rsc.publisher.Px;
-import rsc.subscriber.BlockingLastSubscriber;
-import rsc.util.*;
+import io.reactivex.Flowable;
+import io.reactivex.internal.subscribers.BlockingLastSubscriber;
+import io.reactivex.internal.subscriptions.*;
+import io.reactivex.plugins.RxJavaPlugins;
 
 enum RpcServiceMapper {
     ;
@@ -26,7 +27,7 @@ enum RpcServiceMapper {
                         try {
                             m.invoke(api, ctx);
                         } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-                            UnsignalledExceptions.onErrorDropped(e);
+                            RxJavaPlugins.onError(e);
                             throw new IllegalStateException(e);
                         }
                         
@@ -48,7 +49,7 @@ enum RpcServiceMapper {
                         try {
                             m.invoke(api, ctx);
                         } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-                            UnsignalledExceptions.onErrorDropped(e);
+                            RxJavaPlugins.onError(e);
                             throw new IllegalStateException(e);
                         }
                         
@@ -228,7 +229,7 @@ enum RpcServiceMapper {
             RpcServerSyncMap rpcServerSyncMap = (RpcServerSyncMap) action;
             return rpcServerSyncMap.map(streamId, ctx, io);
         }
-        UnsignalledExceptions.onErrorDropped(new IllegalStateException("Unsupported action: " + action.getClass()));
+        RxJavaPlugins.onError(new IllegalStateException("Unsupported action: " + action.getClass()));
         return false;
     }
     
@@ -283,9 +284,9 @@ enum RpcServiceMapper {
         
         public void send(String function, Object[] args, RsAPIManager io) {
             if (args.length == 1) {
-                RpcClientSend.sendStatic(function, Px.just(args[0]), io);
+                RpcClientSend.sendStatic(function, Flowable.just(args[0]), io);
             } else {
-                RpcClientSend.sendStatic(function, Px.just(args), io);
+                RpcClientSend.sendStatic(function, Flowable.just(args), io);
             }
         }
     }
@@ -309,7 +310,8 @@ enum RpcServiceMapper {
         static final class SendSubscriber 
         extends DeferredSubscription
         implements Subscriber<Object> {
-            
+            private static final long serialVersionUID = 5036194896026890449L;
+
             final RsAPIManager io;
             
             final long streamId;
@@ -323,7 +325,7 @@ enum RpcServiceMapper {
             
             @Override
             public void onSubscribe(Subscription s) {
-                super.set(s);
+                super.setSubscription(s);
             }
             
             @Override
@@ -342,7 +344,7 @@ enum RpcServiceMapper {
             @Override
             public void onError(Throwable t) {
                 if (done) {
-                    UnsignalledExceptions.onErrorDropped(t);
+                    RxJavaPlugins.onError(t);
                     return;
                 }
                 done = true;
@@ -419,9 +421,9 @@ enum RpcServiceMapper {
             Publisher<?> p; 
             
             if (args.length == 1) {
-                p = RpcClientMap.mapStatic(function, Px.just(args[0]), io);
+                p = RpcClientMap.mapStatic(function, Flowable.just(args[0]), io);
             } else {
-                p = RpcClientMap.mapStatic(function, Px.just(args), io);
+                p = RpcClientMap.mapStatic(function, Flowable.just(args), io);
             }
             
             BlockingLastSubscriber<Object> subscriber = new BlockingLastSubscriber<>();
@@ -458,7 +460,8 @@ enum RpcServiceMapper {
         }
         
         static final class RpcMapSubscriber extends DeferredSubscription implements Subscriber<Object> {
-            
+            private static final long serialVersionUID = 45948919781327335L;
+
             final long streamId;
             
             final AtomicInteger open;
@@ -475,7 +478,7 @@ enum RpcServiceMapper {
 
             @Override
             public void onSubscribe(Subscription s) {
-                super.set(s);
+                super.setSubscription(s);
             }
 
             @Override
@@ -494,7 +497,7 @@ enum RpcServiceMapper {
             @Override
             public void onError(Throwable t) {
                 if (done) {
-                    UnsignalledExceptions.onErrorDropped(t);
+                    RxJavaPlugins.onError(t);
                     return;
                 }
                 done = true;
@@ -622,7 +625,7 @@ enum RpcServiceMapper {
                     receiver.actual = s;
                     s.onSubscribe(receiver.s);
                 } else {
-                    EmptySubscription.error(s, new IllegalStateException("Only one subscriber allowed"));
+                    EmptySubscription.error(new IllegalStateException("Only one subscriber allowed"), s);
                 }
             };
             
@@ -632,13 +635,13 @@ enum RpcServiceMapper {
                 u = mapper.apply(p);
             } catch (Throwable ex) {
                 u = w -> {
-                    EmptySubscription.error(w, ex);
+                    EmptySubscription.error(ex, w);
                 };
             }
             
             if (u == null) {
                 u = w -> {
-                    EmptySubscription.error(w, new NullPointerException("The umapper returned a null Publisher"));
+                    EmptySubscription.error(new NullPointerException("The umapper returned a null Publisher"), w);
                 };
             }
             
@@ -713,6 +716,8 @@ enum RpcServiceMapper {
         }
         
         static final class RpcUmapProvider extends DeferredSubscription implements Subscriber<Object> {
+            private static final long serialVersionUID = 2958791596026498820L;
+
             final long streamId;
             
             final RsAPIManager io;
@@ -729,7 +734,7 @@ enum RpcServiceMapper {
             
             @Override
             public void onSubscribe(Subscription s) {
-                set(s);
+                setSubscription(s);
             }
             
             @Override
@@ -747,7 +752,7 @@ enum RpcServiceMapper {
             @Override
             public void onError(Throwable t) {
                 if (done) {
-                    UnsignalledExceptions.onErrorDropped(t);
+                    RxJavaPlugins.onError(t);
                     return;
                 }
                 done = true;
@@ -789,7 +794,7 @@ enum RpcServiceMapper {
             RpcServerSend.ServerSendSubscriber parent = new RpcServerSend.ServerSendSubscriber(streamId, io);
             io.registerSubscription(streamId, parent);
             
-            Px.fromCallable(() -> {
+            Flowable.fromCallable(() -> {
                 return m.invoke(instance, ctx);
             })
             .subscribe(parent);
@@ -813,7 +818,7 @@ enum RpcServiceMapper {
             try {
                 output = (Publisher<?>)m.invoke(instance, ctx);
             } catch (Throwable ex) {
-                UnsignalledExceptions.onErrorDropped(ex);
+                RxJavaPlugins.onError(ex);
                 
                 io.sendError(streamId, ex);
                 return true;
@@ -834,6 +839,8 @@ enum RpcServiceMapper {
         
         static final class ServerSendSubscriber 
         extends DeferredSubscription implements Subscriber<Object> {
+            private static final long serialVersionUID = 4628307619135978981L;
+
             final long streamId;
             
             final RsAPIManager io;
@@ -847,7 +854,7 @@ enum RpcServiceMapper {
             
             @Override
             public void onSubscribe(Subscription s) {
-                set(s);
+                setSubscription(s);
             }
             
             @Override
@@ -866,7 +873,7 @@ enum RpcServiceMapper {
             @Override
             public void onError(Throwable t) {
                 if (done) {
-                    UnsignalledExceptions.onErrorDropped(t);
+                    RxJavaPlugins.onError(t);
                     return;
                 }
                 done = true;
@@ -904,7 +911,7 @@ enum RpcServiceMapper {
                     io.registerSubscriber(streamId, parent);
                     s.onSubscribe(parent);
             };
-            Px.wrap(p).observeOn(ctx.scheduler()).map(o -> {
+            Flowable.fromPublisher(p).observeOn(ctx.scheduler()).map(o -> {
                 syncInvoke(m, instance, ctx, o);
                 return 0;
             }).subscribe();
@@ -962,14 +969,14 @@ enum RpcServiceMapper {
                     io.registerSubscriber(streamId, parent);
                     s.onSubscribe(parent);
                 } else {
-                    EmptySubscription.error(s, new IllegalStateException("This Publisher allows only a single subscriber"));
+                    EmptySubscription.error(new IllegalStateException("This Publisher allows only a single subscriber"), s);
                 }
             };
             
             try {
                 m.invoke(instance, ctx, p);
             } catch (Throwable ex) {
-                UnsignalledExceptions.onErrorDropped(ex);
+                RxJavaPlugins.onError(ex);
                 
                 io.sendCancel(streamId, ex.toString());
             }
@@ -1052,11 +1059,11 @@ enum RpcServiceMapper {
                     parent.actual = s;
                     s.onSubscribe(parent.s);
                 } else {
-                    EmptySubscription.error(s, new IllegalStateException("This Publisher allows only a single subscriber"));
+                    EmptySubscription.error(new IllegalStateException("This Publisher allows only a single subscriber"), s);
                 }
             };
             
-            Publisher<?> u = Px.wrap(p).observeOn(ctx.scheduler())
+            Publisher<?> u = Flowable.fromPublisher(p).observeOn(ctx.scheduler())
                     .map(o -> syncInvoke(m, instance, ctx, o));
             
             u.subscribe(sender);
@@ -1092,7 +1099,7 @@ enum RpcServiceMapper {
                     parent.actual = s;
                     s.onSubscribe(parent.s);
                 } else {
-                    EmptySubscription.error(s, new IllegalStateException("This Publisher allows only a single subscriber"));
+                    EmptySubscription.error(new IllegalStateException("This Publisher allows only a single subscriber"), s);
                 }
             };
             
@@ -1100,13 +1107,13 @@ enum RpcServiceMapper {
             try {
                 u = (Publisher<?>)m.invoke(instance, ctx, p);
             } catch (Throwable ex) {
-                UnsignalledExceptions.onErrorDropped(ex);
+                RxJavaPlugins.onError(ex);
                 
-                u = s -> EmptySubscription.error(s, ex);
+                u = s -> EmptySubscription.error(ex, s);
             }
             
             if (u == null) {
-                u = s -> EmptySubscription.error(s, new NullPointerException("The service implementation returned a null Publisher"));
+                u = s -> EmptySubscription.error(new NullPointerException("The service implementation returned a null Publisher"), s);
             }
             
             u.subscribe(sender);
@@ -1198,6 +1205,8 @@ enum RpcServiceMapper {
         }
         static final class ServerSendSubscriber 
         extends DeferredSubscription implements Subscriber<Object> {
+            private static final long serialVersionUID = -7430636028018326515L;
+
             final long streamId;
             
             final RsAPIManager io;
@@ -1214,7 +1223,7 @@ enum RpcServiceMapper {
             
             @Override
             public void onSubscribe(Subscription s) {
-                set(s);
+                setSubscription(s);
             }
             
             @Override
@@ -1233,7 +1242,7 @@ enum RpcServiceMapper {
             @Override
             public void onError(Throwable t) {
                 if (done) {
-                    UnsignalledExceptions.onErrorDropped(t);
+                    RxJavaPlugins.onError(t);
                     return;
                 }
                 done = true;

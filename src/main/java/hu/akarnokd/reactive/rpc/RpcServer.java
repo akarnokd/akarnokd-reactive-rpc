@@ -3,23 +3,20 @@ package hu.akarnokd.reactive.rpc;
 import java.io.IOException;
 import java.net.*;
 import java.util.Objects;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import rsc.flow.Cancellation;
-import rsc.scheduler.*;
-import rsc.util.UnsignalledExceptions;
+import io.reactivex.Scheduler;
+import io.reactivex.disposables.Disposable;
+import io.reactivex.internal.schedulers.SingleScheduler;
+import io.reactivex.plugins.RxJavaPlugins;
+import io.reactivex.schedulers.Schedulers;
 
 public final class RpcServer<T> {
     
     final Object localAPI;
     final Class<T> remoteAPI;
 
-    static Scheduler scheduler = new ExecutorServiceScheduler(Executors.newCachedThreadPool(r -> {
-        Thread t = new Thread(r, "akarnokd-reactive-rpc-clientpool");
-        t.setDaemon(true);
-        return t;
-    }));
+    static Scheduler scheduler = Schedulers.io();
 
     
     private RpcServer(Object localAPI, Class<T> remoteAPI) {
@@ -60,10 +57,10 @@ public final class RpcServer<T> {
     }
     
     AutoCloseable setup(ServerSocket ssocket) {
-        Scheduler acceptor = new ParallelScheduler(1, "akarnokd-reactive-rpc-connection", true);
+        Scheduler acceptor = new SingleScheduler();
 
         AtomicBoolean done = new AtomicBoolean();
-        Cancellation c = acceptor.schedule(() -> {
+        Disposable c = acceptor.scheduleDirect(() -> {
             socketAccept(ssocket, done);
         });
         
@@ -84,7 +81,7 @@ public final class RpcServer<T> {
                 
             } catch (IOException e) {
                 if (!done.get()) {
-                    UnsignalledExceptions.onErrorDropped(e);
+                    RxJavaPlugins.onError(e);
                 }
                 return;
             }
@@ -93,11 +90,11 @@ public final class RpcServer<T> {
                 RpcSocketManager.connect(socket, socket.getInetAddress(), socket.getPort(), 
                         remoteAPI, localAPI, c -> { }, scheduler, true);
             } catch (Throwable ex) {
-                UnsignalledExceptions.onErrorDropped(ex);
+                RxJavaPlugins.onError(ex);
                 try {
                     socket.close();
                 } catch (IOException e) {
-                    UnsignalledExceptions.onErrorDropped(e);
+                    RxJavaPlugins.onError(e);
                 }
             }
         }

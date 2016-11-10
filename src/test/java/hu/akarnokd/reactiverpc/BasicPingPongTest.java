@@ -8,9 +8,9 @@ import org.junit.Test;
 import org.reactivestreams.Publisher;
 
 import hu.akarnokd.reactive.rpc.*;
-import rsc.flow.Cancellation;
-import rsc.publisher.Px;
-import rsc.scheduler.ImmediateScheduler;
+import io.reactivex.Flowable;
+import io.reactivex.disposables.Disposable;
+import io.reactivex.internal.schedulers.ImmediateThinScheduler;
 
 public class BasicPingPongTest {
 
@@ -69,19 +69,19 @@ public class BasicPingPongTest {
         @RsRpc
         public Publisher<Integer> pong2(RpcStreamContext<Void> ctx, Publisher<Integer> ping) {
             System.out.println("Server: pong2()");
-            return Px.wrap(ping).map(v -> v + 1);
+            return Flowable.fromPublisher(ping).map(v -> v + 1);
         }
 
         @RsRpc
         public Publisher<Integer> pong(RpcStreamContext<Void> ctx, Publisher<Integer> ping) {
             System.out.println("Server: pong()");
-            return Px.wrap(ping).map(v -> v + 1);
+            return Flowable.fromPublisher(ping).map(v -> v + 1);
         }
 
         @RsRpc
         public void send(RpcStreamContext<Void> ctx, Publisher<Integer> values) {
             System.out.println("Server: send()");
-            Px.wrap(values).subscribe(v -> {
+            Flowable.fromPublisher(values).subscribe(v -> {
                 System.out.println("Server: " + v);
             }, Throwable::printStackTrace);
         }
@@ -93,7 +93,7 @@ public class BasicPingPongTest {
         @RsRpc
         public Publisher<Integer> receive(RpcStreamContext<Void> ctx) {
             System.out.println("Server: receive()");
-            return Px.range(1, 1000);
+            return Flowable.range(1, 1000);
         }
 
         @RsRpc
@@ -103,16 +103,16 @@ public class BasicPingPongTest {
         @RsRpc
         public Publisher<Integer> umap(RpcStreamContext<Void> ctx, Publisher<Integer> values) {
             System.out.println("Server: umap()");
-            Px.wrap(values).subscribe(v -> {
+            Flowable.fromPublisher(values).subscribe(v -> {
                 System.out.println("Server: " + v);
             }, Throwable::printStackTrace);
             
-            return Px.just(50);
+            return Flowable.just(50);
         }
     }
     
     static void print(Publisher<?> p) {
-        System.out.println(Px.wrap(p).blockingLast());
+        System.out.println(Flowable.fromPublisher(p).blockingLast());
     }
     
     @Test
@@ -121,7 +121,7 @@ public class BasicPingPongTest {
         RpcServer<Void> server = RpcServer.createLocal(new PingPongServerAPI());
         RpcClient<PingPongClientAPI> client = RpcClient.createRemote(PingPongClientAPI.class);
         
-        AtomicReference<Cancellation> cancel = new AtomicReference<>();
+        AtomicReference<Disposable> cancel = new AtomicReference<>();
         
         try (AutoCloseable c = server.start(12345)) {
             
@@ -139,13 +139,13 @@ public class BasicPingPongTest {
             
             
             System.out.println("Map:");
-            print(api.pong(Px.just(1)));
+            print(api.pong(Flowable.just(1)));
 
             System.out.println("Sync map:");
             System.out.println(api.pong2(2));
             
             System.out.println("Send:");
-            api.send(Px.just(20));
+            api.send(Flowable.just(20));
             
             Thread.sleep(200);
 
@@ -156,7 +156,7 @@ public class BasicPingPongTest {
 
             System.out.println("Receive:");
             long t = System.currentTimeMillis();
-            print(Px.wrap(api.receive()));
+            print(Flowable.fromPublisher(api.receive()));
             
             System.out.println("t = " + (System.currentTimeMillis() - t));
 
@@ -164,7 +164,7 @@ public class BasicPingPongTest {
             System.out.println(api.receive2());
             
             System.out.println("Umap:");
-            api.umap(o -> Px.wrap(o).map(v -> -v));
+            api.umap(o -> Flowable.fromPublisher(o).map(v -> -v));
             
             Thread.sleep(5000);
             
@@ -182,9 +182,9 @@ public class BasicPingPongTest {
         @RsRpc
         public Publisher<Integer> range(RpcStreamContext<?> ctx, Publisher<Integer> count) {
 //            System.out.println("Server: range");
-            return Px.wrap(count).concatMap(v -> {
+            return Flowable.fromPublisher(count).concatMap(v -> {
 //                System.out.println("Server: " + v);
-                return Px.range(1, v);
+                return Flowable.range(1, v);
             });
         }
     }
@@ -195,7 +195,7 @@ public class BasicPingPongTest {
         RpcServer<Void> server = RpcServer.createLocal(new StreamPerfServerAPI());
         RpcClient<StreamPerfClientAPI> client = RpcClient.createRemote(StreamPerfClientAPI.class);
         
-        AtomicReference<Cancellation> cancel = new AtomicReference<>();
+        AtomicReference<Disposable> cancel = new AtomicReference<>();
         
         try (AutoCloseable c = server.start(12345)) {
             
@@ -210,10 +210,10 @@ public class BasicPingPongTest {
                 for (int j = 0; j < 10; j++) {
                     long t = System.nanoTime();
                     
-                    long count = Px.wrap(api.range(Px.just(i)))
-                    .observeOn(ImmediateScheduler.instance())
+                    long count = Flowable.fromPublisher(api.range(Flowable.just(i)))
+                    .observeOn(ImmediateThinScheduler.INSTANCE)
                     .count()
-                    .blockingLast();
+                    .blockingGet();
 
                     t = System.nanoTime() - t;
                     

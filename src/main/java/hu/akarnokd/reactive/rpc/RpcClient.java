@@ -3,11 +3,11 @@ package hu.akarnokd.reactive.rpc;
 import java.io.IOException;
 import java.net.*;
 import java.util.Objects;
-import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
-import rsc.flow.Cancellation;
-import rsc.scheduler.*;
+import io.reactivex.Scheduler;
+import io.reactivex.disposables.Disposable;
+import io.reactivex.schedulers.Schedulers;
 
 public final class RpcClient<T> {
 
@@ -15,11 +15,7 @@ public final class RpcClient<T> {
     
     final Object localAPI;
     
-    static Scheduler scheduler = new ExecutorServiceScheduler(Executors.newCachedThreadPool(r -> {
-        Thread t = new Thread(r, "akarnokd-reactive-rpc-clientpool");
-        t.setDaemon(true);
-        return t;
-    }));
+    static Scheduler scheduler = Schedulers.io();
     
     private RpcClient(Class<T> remoteAPI, Object localAPI) {
         this.remoteAPI = remoteAPI;
@@ -42,7 +38,7 @@ public final class RpcClient<T> {
         return new RpcClient<>(remoteAPI, localAPI);
     }
     
-    public T connect(InetAddress endpoint, int port, Consumer<Cancellation> close) {
+    public T connect(InetAddress endpoint, int port, Consumer<Disposable> close) {
         Socket socket;
         
         try {

@@ -5,8 +5,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.IntConsumer;
 
 import hu.akarnokd.reactive.pc.*;
-import rsc.scheduler.Scheduler.Worker;
-import rsc.util.UnsignalledExceptions;
+import io.reactivex.Scheduler.Worker;
+import io.reactivex.plugins.RxJavaPlugins;
 
 final class RpcIOManager implements RsRpcProtocol.RsRpcReceive, RsPcSend {
     
@@ -55,18 +55,18 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive, RsPcSend {
         try {
             in.close();
         } catch (IOException e) {
-            UnsignalledExceptions.onErrorDropped(e);
+            RxJavaPlugins.onError(e);
         }
         
         try {
             out.close();
         } catch (IOException e) {
-            UnsignalledExceptions.onErrorDropped(e);
+            RxJavaPlugins.onError(e);
         }
         
-        reader.shutdown();
+        reader.dispose();
         
-        writer.shutdown();
+        writer.dispose();
     }
     
     void handleRead() {
@@ -223,7 +223,7 @@ final class RpcIOManager implements RsRpcProtocol.RsRpcReceive, RsPcSend {
         try {
             out.flush();
         } catch (IOException ex) {
-            UnsignalledExceptions.onErrorDropped(ex);
+            RxJavaPlugins.onError(ex);
         }
     }
     

@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.*;
 
 import org.reactivestreams.*;
 
-import rsc.util.UnsignalledExceptions;
+import io.reactivex.plugins.RxJavaPlugins;
 
 /**
  * Allows registering Subscribers and Subscriptions for incoming messages
@@ -119,7 +119,7 @@ public final class RsAPIManager implements RsPcReceive, RsPcSend {
                 return;
             }
         }
-        UnsignalledExceptions.onErrorDropped(e);
+        RxJavaPlugins.onError(e);
     }
 
     @Override

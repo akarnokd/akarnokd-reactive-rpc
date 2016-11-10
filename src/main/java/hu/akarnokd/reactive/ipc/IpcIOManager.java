@@ -5,9 +5,9 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
 import hu.akarnokd.reactive.pc.*;
-import rsc.scheduler.Scheduler;
-import rsc.scheduler.Scheduler.Worker;
-import rsc.util.UnsignalledExceptions;
+import io.reactivex.Scheduler;
+import io.reactivex.Scheduler.Worker;
+import io.reactivex.plugins.RxJavaPlugins;
 
 public final class IpcIOManager implements Closeable, RsPcSend {
 
@@ -107,7 +107,7 @@ public final class IpcIOManager implements Closeable, RsPcSend {
             }
         } catch (IOException ex) {
             if (!closed) {
-                UnsignalledExceptions.onErrorDropped(ex);
+                RxJavaPlugins.onError(ex);
             }
         }
     }
@@ -161,13 +161,13 @@ public final class IpcIOManager implements Closeable, RsPcSend {
         
         closed = true;
         
-        dataReader.shutdown();
+        dataReader.dispose();
         
-        dataWriter.shutdown();
+        dataWriter.dispose();
         
-        signalReader.shutdown();
+        signalReader.dispose();
         
-        signalWriter.shutdown();
+        signalWriter.dispose();
         
         wip.close();
         
@@ -375,7 +375,7 @@ public final class IpcIOManager implements Closeable, RsPcSend {
                 outp.setIntVolatile(writeIndex, 16);
                 outp.closeFile();
             } catch (IOException ex) {
-                UnsignalledExceptions.onErrorDropped(ex);
+                RxJavaPlugins.onError(ex);
             }
             
             return true;
@@ -712,7 +712,7 @@ public final class IpcIOManager implements Closeable, RsPcSend {
             o.flush();
         } catch (IOException ex) {
             if (!closed) {
-                UnsignalledExceptions.onErrorDropped(ex);
+                RxJavaPlugins.onError(ex);
             }
         }
     }

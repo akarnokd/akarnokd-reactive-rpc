@@ -2,7 +2,7 @@ package hu.akarnokd.reactive.rpc;
 
 import java.net.InetAddress;
 
-import rsc.scheduler.Scheduler;
+import io.reactivex.Scheduler;
 
 public interface RpcStreamContext<T> {
 

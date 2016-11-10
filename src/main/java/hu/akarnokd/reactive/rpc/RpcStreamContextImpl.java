@@ -3,7 +3,7 @@ package hu.akarnokd.reactive.rpc;
 import java.net.InetAddress;
 import java.util.concurrent.*;
 
-import rsc.scheduler.Scheduler;
+import io.reactivex.Scheduler;
 
 final class RpcStreamContextImpl<T> implements RpcStreamContext<T> {
     

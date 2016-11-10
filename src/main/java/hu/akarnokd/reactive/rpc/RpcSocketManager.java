@@ -7,16 +7,17 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 import hu.akarnokd.reactive.pc.RsAPIManager;
-import rsc.flow.Cancellation;
-import rsc.scheduler.*;
-import rsc.util.UnsignalledExceptions;
+import io.reactivex.Scheduler;
+import io.reactivex.disposables.*;
+import io.reactivex.plugins.RxJavaPlugins;
+import io.reactivex.schedulers.Schedulers;
 
 enum RpcSocketManager {
     ;
     
     public static <T> T connect(Socket socket, InetAddress endpoint, int port, 
             Class<T> remoteAPI, Object localAPI, 
-            Consumer<Cancellation> close, Scheduler scheduler,
+            Consumer<Disposable> close, Scheduler scheduler,
             boolean server) {
         ;
         InputStream in;
@@ -29,9 +30,8 @@ enum RpcSocketManager {
             throw new RuntimeException(e);
         }
         
-        Scheduler dispatcher = new ParallelScheduler(2, "akarnokd-reactive-rpc-" + (server ? "server" : "client") + "-io", true);
-        Scheduler.Worker reader = dispatcher.createWorker();
-        Scheduler.Worker writer = dispatcher.createWorker();
+        Scheduler.Worker reader = Schedulers.io().createWorker();
+        Scheduler.Worker writer = Schedulers.io().createWorker();
         
         Map<String, Object> clientMap;
         Map<String, Object> serverMap;
@@ -69,7 +69,7 @@ enum RpcSocketManager {
 
         RpcIOManager rpcIo;
         
-        ctx = new RpcStreamContextImpl<>(endpoint, port, api, scheduler);
+        ctx = new RpcStreamContextImpl<>(endpoint, port, api, Schedulers.io());
 
         if (localAPI != null) {
             serverMap = RpcServiceMapper.serverServiceMap(localAPI);
@@ -77,7 +77,7 @@ enum RpcSocketManager {
             RsAPIManager apiMgr = new RsAPIManager(server, (streamId, function, iom) -> {
                 Object action = serverMap.get(function);
                 if (action == null) {
-                    UnsignalledExceptions.onErrorDropped(new IllegalStateException("Function " + function + " not found"));
+                    RxJavaPlugins.onError(new IllegalStateException("Function " + function + " not found"));
                     return false;
                 }
                 return RpcServiceMapper.dispatchServer(streamId, action, iom, ctx);
@@ -103,15 +103,15 @@ enum RpcSocketManager {
         
         rpcIo.start();
         
-        close.accept(() -> {
+        close.accept(Disposables.fromRunnable(() -> {
             rpcIo.close();
             
             try {
                 socket.close();
             } catch (IOException ex) {
-                UnsignalledExceptions.onErrorDropped(ex);
+                RxJavaPlugins.onError(ex);
             }
-        });
+        }));
         
         return api;
     }
